@@ -1,0 +1,10 @@
+{
+  "files": [],
+  "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.node.json" }],
+  "compilerOptions": {
+    /* Path alias: `@/` points at `src/` (read by shadcn/ui and editors; the real settings live in tsconfig.app.json) */
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  }
+}

@@ -1,1 +1,18 @@
+# Node
+node_modules
+dist
+*.local
+*.log
+
+# Rust / Tauri (see also src-tauri/.gitignore)
+src-tauri/target
+src-tauri/gen/schemas
+# rust-analyzer may create a target dir at the repo root
 /target
+*.tsbuildinfo
+
+# Editors and OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store

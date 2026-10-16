@@ -1,0 +1,39 @@
+[package]
+name = "orbis-scriptor"
+version = "0.1.0"
+description = "Local-first desktop app for fantasy worldbuilding"
+authors = ["Oscar Freeman"]
+edition = "2024"
+
+[lib]
+# The `_lib` suffix keeps the library name distinct from the binary name,
+# which otherwise clashes on Windows (rust-lang/cargo#8519).
+name = "orbis_scriptor_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+# tauri-specta generates src/lib/bindings.ts from our commands. It is still a
+# release candidate, so specta must be pinned with `=` exactly as it requires.
+specta = { version = "=2.0.0-rc.25", features = ["derive"] }
+specta-typescript = "0.0.12"
+tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
+
+[lints.clippy]
+# CLAUDE.md rule 3: no unwrap()/expect() outside tests and startup code.
+unwrap_used = "warn"
+expect_used = "warn"
+
+# Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
