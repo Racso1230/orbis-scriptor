@@ -41,16 +41,16 @@ Read `CLAUDE.md` first. Implement **one phase per session**, in order. Each phas
 
 **Goal:** the user can create a new world folder or open an existing one.
 
-- [ ] Welcome screen: "New world", "Open world", list of recent worlds
-- [ ] Use the Tauri dialog plugin for folder picking
-- [ ] `create_world(path, name)`: creates `world.json`, `world.db`, `assets/`; refuses non-empty folders that aren't worlds
-- [ ] `open_world(path)`: validates `world.json`, opens the database, runs pending migrations, stores the handle in managed state
-- [ ] `close_world()`
-- [ ] Migrations with `rusqlite_migration`; migration 001 creates a `meta` table (key/value) and enables `PRAGMA foreign_keys = ON` and WAL mode on every connection
-- [ ] Before running migrations on an existing world, copy `world.db` to `world.db.bak`
-- [ ] Recent worlds list stored in the app config directory (not inside worlds); missing folders shown as unavailable with a "remove" option
-- [ ] App shell once a world is open: left sidebar, main content area, top bar with world name and a "close world" action
-- [ ] Tests: create → open → close round trip; opening an invalid folder returns a clear error; migrations are idempotent
+- [x] Welcome screen: "New world", "Open world", list of recent worlds
+- [x] Use the Tauri dialog plugin for folder picking
+- [x] `create_world(path, name)`: creates `world.json`, `world.db`, `assets/`; refuses non-empty folders that aren't worlds
+- [x] `open_world(path)`: validates `world.json`, opens the database, runs pending migrations, stores the handle in managed state
+- [x] `close_world()`
+- [x] Migrations with `rusqlite_migration`; migration 001 creates a `meta` table (key/value) and enables `PRAGMA foreign_keys = ON` and WAL mode on every connection
+- [x] Before running migrations on an existing world, copy `world.db` to `world.db.bak`
+- [x] Recent worlds list stored in the app config directory (not inside worlds) as `recent-worlds.json`, capped at 10; missing folders shown as unavailable with a "remove" option
+- [x] App shell once a world is open: left sidebar, main content area, top bar with world name and a "close world" action
+- [x] Tests: create → open → close round trip; opening an invalid folder returns a clear error; migrations are idempotent
 
 **Acceptance:** create a world, close the app, reopen it from the recent list, and land in the (empty) app shell.
 
