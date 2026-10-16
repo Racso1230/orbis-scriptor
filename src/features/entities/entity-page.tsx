@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { Trash2 } from "lucide-react";
 import {
@@ -24,15 +24,22 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { LoreEditor } from "@/features/lore/lore-editor";
 import { useCurrentWorld } from "@/features/worlds/queries";
 import type { Entity, EntityTypeDef, FieldDef } from "@/lib/bindings";
 import { useTabsStore } from "@/stores/tabs-store";
 import { EntityIcon } from "./entity-icon";
 import { useDeleteEntity, useEntity, useEntityTypes, useUpdateEntity } from "./queries";
 import { SaveIndicator } from "./save-indicator";
-import { useAutosave } from "./use-autosave";
+import { useAutosave, type SaveStatus } from "./use-autosave";
 
 type Properties = Entity["properties"];
+
+/** The fields form and the lore editor save separately; show the "worst" state. */
+const STATUS_PRIORITY: SaveStatus[] = ["error", "saving", "dirty", "saved"];
+function combineStatus(a: SaveStatus, b: SaveStatus): SaveStatus {
+  return STATUS_PRIORITY.find((s) => s === a || s === b) ?? "saved";
+}
 
 /** Route component for `/world/entity/$id`. */
 export function EntityPage() {
@@ -67,9 +74,20 @@ function EntityForm({ entity, type }: { entity: Entity; type: EntityTypeDef | un
   const [properties, setProperties] = useState<Properties>(entity.properties);
 
   const draft = { name, summary, properties };
-  const { status, error } = useAutosave(draft, (value) =>
+  const fields = useAutosave(draft, (value) =>
     updateEntity.mutateAsync({ id: entity.id, patch: value }),
   );
+  const [lore, setLore] = useState<{ status: SaveStatus; error: string | null }>({
+    status: "saved",
+    error: null,
+  });
+  // Stable callback so the editor's effect doesn't re-run every render.
+  const onLoreStatus = useCallback(
+    (status: SaveStatus, error: string | null) => setLore({ status, error }),
+    [],
+  );
+  const status = combineStatus(fields.status, lore.status);
+  const error = fields.error ?? lore.error;
 
   function setProperty(key: string, value: unknown) {
     setProperties((prev) => {
@@ -143,6 +161,11 @@ function EntityForm({ entity, type }: { entity: Entity; type: EntityTypeDef | un
           ))}
         </div>
       )}
+
+      <div className="flex flex-col gap-2">
+        <Label>Lore</Label>
+        <LoreEditor entityId={entity.id} onStatusChange={onLoreStatus} />
+      </div>
     </div>
   );
 }

@@ -128,3 +128,43 @@
     @apply font-sans;
   }
 }
+
+/* --- Lore editor (TipTap/ProseMirror) ------------------------------------- */
+@plugin "@tailwindcss/typography";
+
+/* Placeholder text on the empty first line. */
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--muted-foreground);
+}
+
+/* Tables: ProseMirror needs these for cell selection and sizing. */
+.tiptap table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  overflow: hidden;
+}
+.tiptap td,
+.tiptap th {
+  position: relative;
+  min-width: 3rem;
+  border: 1px solid var(--border);
+  padding: 0.25rem 0.5rem;
+  vertical-align: top;
+}
+.tiptap th {
+  background: var(--muted);
+  font-weight: 600;
+}
+.tiptap .selectedCell::after {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  content: "";
+  pointer-events: none;
+  background: color-mix(in oklch, var(--primary) 15%, transparent);
+}
