@@ -12,6 +12,7 @@ src-tauri/gen/schemas
 *.tsbuildinfo
 
 # Editors and OS
+.claude/settings.local.json
 .vscode/*
 !.vscode/extensions.json
 .idea

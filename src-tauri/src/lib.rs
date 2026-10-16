@@ -51,6 +51,8 @@ pub fn run() {
     export_bindings(&builder).expect("failed to export TypeScript bindings");
 
     tauri::Builder::default()
+        // Native open/save dialogs (folder picker on the welcome screen).
+        .plugin(tauri_plugin_dialog::init())
         .manage(state::AppState::default())
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {

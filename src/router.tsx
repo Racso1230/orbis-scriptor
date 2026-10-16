@@ -3,20 +3,46 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  redirect,
 } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
-import { WelcomePage } from "@/features/app/welcome-page";
+import { currentWorldQuery } from "@/features/worlds/queries";
+import { WelcomePage } from "@/features/worlds/welcome-page";
+import { WorldEmptyState, WorldLayout } from "@/features/worlds/world-layout";
+import { queryClient } from "@/lib/query-client";
 
 // Code-based routes (no file-based routing plugin). Add new routes here.
 const rootRoute = createRootRoute({ component: AppShell });
 
+// `/` — welcome screen. If a world is already open, go straight to it.
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
+  beforeLoad: async () => {
+    const world = await queryClient.query({ ...currentWorldQuery, staleTime: "static" });
+    if (world) throw redirect({ to: "/world" });
+  },
   component: WelcomePage,
 });
 
-const routeTree = rootRoute.addChildren([indexRoute]);
+// `/world` — everything that needs an open world. Guarded: no world → welcome.
+const worldRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/world",
+  beforeLoad: async () => {
+    const world = await queryClient.query({ ...currentWorldQuery, staleTime: "static" });
+    if (!world) throw redirect({ to: "/" });
+  },
+  component: WorldLayout,
+});
+
+const worldIndexRoute = createRoute({
+  getParentRoute: () => worldRoute,
+  path: "/",
+  component: WorldEmptyState,
+});
+
+const routeTree = rootRoute.addChildren([indexRoute, worldRoute.addChildren([worldIndexRoute])]);
 
 // Hash history keeps URLs working both in `tauri dev` and in the packaged app,
 // where the frontend is served from a custom protocol rather than a web server.
