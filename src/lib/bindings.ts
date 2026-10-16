@@ -12,6 +12,20 @@ export const commands = {
 	 *  `tauri::AppHandle` is injected by Tauri; the frontend never passes it.
 	 */
 	appInfo: () => typedError<AppInfo, AppError>(__TAURI_INVOKE("app_info")),
+	/**  Creates a new world folder and opens it. */
+	createWorld: (path: string, name: string) => typedError<WorldSummary, AppError>(__TAURI_INVOKE("create_world", { path, name })),
+	/**  Opens an existing world folder (running migrations if needed). */
+	openWorld: (path: string) => typedError<WorldSummary, AppError>(__TAURI_INVOKE("open_world", { path })),
+	/**  Closes the open world, if any. Dropping the handle closes the database. */
+	closeWorld: () => typedError<null, AppError>(__TAURI_INVOKE("close_world")),
+	/**  The currently open world, or `null`. */
+	currentWorld: () => typedError<{
+	name: string,
+	/**  Absolute path of the world folder, as a string for the frontend. */
+	path: string,
+} | null, AppError>(__TAURI_INVOKE("current_world")),
+	listRecentWorlds: () => typedError<RecentWorld[], AppError>(__TAURI_INVOKE("list_recent_worlds")),
+	removeRecentWorld: (path: string) => typedError<null, AppError>(__TAURI_INVOKE("remove_recent_world", { path })),
 };
 
 /* Types */
@@ -32,6 +46,23 @@ export type AppError = { kind: "io"; message: string } | { kind: "validation"; m
 export type AppInfo = {
 	name: string,
 	version: string,
+};
+
+/**  One row of the "recent worlds" list on the welcome screen. */
+export type RecentWorld = {
+	name: string,
+	path: string,
+	/**  UTC ISO-8601 text. */
+	lastOpenedAt: string,
+	/**  False when the folder (or its `world.json`) no longer exists. */
+	available: boolean,
+};
+
+/**  What the frontend needs to know about the currently open world. */
+export type WorldSummary = {
+	name: string,
+	/**  Absolute path of the world folder, as a string for the frontend. */
+	path: string,
 };
 
 /* Tauri Specta runtime */

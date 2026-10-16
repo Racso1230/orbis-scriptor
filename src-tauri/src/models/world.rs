@@ -18,6 +18,18 @@ pub struct WorldManifest {
     pub created_at: String,
 }
 
+/// One row of the "recent worlds" list on the welcome screen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentWorld {
+    pub name: String,
+    pub path: String,
+    /// UTC ISO-8601 text.
+    pub last_opened_at: String,
+    /// False when the folder (or its `world.json`) no longer exists.
+    pub available: bool,
+}
+
 /// What the frontend needs to know about the currently open world.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]

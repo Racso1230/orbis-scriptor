@@ -15,7 +15,15 @@ use tauri_specta::{Builder, collect_commands};
 /// Registers every command with tauri-specta. Used both at startup and by the
 /// test that regenerates `src/lib/bindings.ts`.
 fn specta_builder() -> Builder<tauri::Wry> {
-    Builder::<tauri::Wry>::new().commands(collect_commands![commands::app::app_info])
+    Builder::<tauri::Wry>::new().commands(collect_commands![
+        commands::app::app_info,
+        commands::world::create_world,
+        commands::world::open_world,
+        commands::world::close_world,
+        commands::world::current_world,
+        commands::world::list_recent_worlds,
+        commands::world::remove_recent_world,
+    ])
 }
 
 /// Writes the TypeScript bindings next to the frontend code.
