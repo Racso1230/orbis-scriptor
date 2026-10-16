@@ -75,14 +75,14 @@ CREATE TABLE entities (
 CREATE INDEX idx_entities_type_name ON entities(type, name);
 ```
 
-- [ ] Built-in types: character, location, faction, item, note. Each type has an icon and a small field definition (e.g. character: species, age, status; location: kind, region) defined in **one** shared place, so adding a type later is easy
-- [ ] Commands: `list_entities(type?)`, `get_entity(id)`, `create_entity`, `update_entity`, `delete_entity`
-- [ ] Sidebar: entities grouped by type, collapsible groups, "new" button per type, filter box. Use a virtualised list so thousands of entities stay fast
-- [ ] Entity page: editable name, type badge, summary, type-specific fields form
-- [ ] Debounced autosave with a visible "Saved / Saving…" indicator
-- [ ] Delete with confirmation dialog
-- [ ] Tabs: opening entities opens tabs in the main area (Zustand store); tabs persist per world
-- [ ] Tests: repository CRUD; properties JSON round trip; service validation (empty name rejected)
+- [x] Built-in types: character, location, faction, item, note. Each type has an icon and a small field definition (e.g. character: species, age, status; location: kind, region) defined in **one** shared place (`src-tauri/src/models/entity_type.rs`, served by the `entity_types` command), so adding a type later is easy
+- [x] Commands: `list_entities(type?)`, `get_entity(id)`, `create_entity`, `update_entity`, `delete_entity`
+- [x] Sidebar: entities grouped by type, collapsible groups, "new" button per type, filter box. Use a virtualised list so thousands of entities stay fast (`@tanstack/react-virtual`)
+- [x] Entity page: editable name, type badge, summary, type-specific fields form
+- [x] Debounced autosave with a visible "Saved / Saving…" indicator (`use-autosave.ts`, 800 ms, flushes on unmount)
+- [x] Delete with confirmation dialog
+- [x] Tabs: opening entities opens tabs in the main area (Zustand store); tabs persist per world
+- [x] Tests: repository CRUD; properties JSON round trip; service validation (empty name rejected)
 
 **Acceptance:** create a character and a location, edit their fields, restart the app and see the changes preserved.
 
