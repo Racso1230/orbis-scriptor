@@ -133,13 +133,13 @@ CREATE TABLE links (
 CREATE INDEX idx_links_target ON links(target_id);
 ```
 
-- [ ] Custom TipTap node: typing `[[` opens an entity picker; the inserted node stores the **entity id** and displays the current name (so renames update automatically)
-- [ ] Option to create a new entity from the picker if no match exists
-- [ ] Clicking a mention opens that entity in a tab
-- [ ] On `save_document`, the Rust service extracts mention ids from the content and syncs `kind = 'mention'` rows in `links` inside a transaction
-- [ ] Deleted targets render as a "missing entity" style instead of breaking the document
-- [ ] Backlinks panel on each entity page: lists entities that mention it, with a text snippet
-- [ ] Tests: mention extraction from TipTap JSON; link sync adds and removes correctly; rename shows in mentions
+- [x] Custom TipTap node: typing `[[` opens an entity picker; the inserted node stores the **entity id** and displays the current name (so renames update automatically) — `src/features/lore/mention.tsx`
+- [x] Option to create a new entity from the picker if no match exists (one "Create … " row per type)
+- [x] Clicking a mention opens that entity in a tab
+- [x] On `save_document`, the Rust service extracts mention ids from the content and syncs `kind = 'mention'` rows in `links` inside a transaction (`services/links.rs`)
+- [x] Deleted targets render as a "missing entity" style instead of breaking the document
+- [x] Backlinks panel on each entity page: lists entities that mention it, with a text snippet
+- [x] Tests: mention extraction from TipTap JSON; link sync adds and removes correctly; rename shows in mentions (verified live; names resolve from the entity list at render time)
 
 **Acceptance:** mention a location from a character's lore, open the location and see the character in its backlinks.
 

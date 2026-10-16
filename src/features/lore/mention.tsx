@@ -1,5 +1,6 @@
 import { mergeAttributes, Node, type Editor, type Range } from "@tiptap/core";
 import { ReactNodeViewRenderer, ReactRenderer } from "@tiptap/react";
+import { PluginKey } from "@tiptap/pm/state";
 import Suggestion, { type SuggestionProps } from "@tiptap/suggestion";
 import type { Entity, EntitySummary, EntityTypeDef } from "@/lib/bindings";
 import { buildMentionItems, type MentionItem } from "./mention-items";
@@ -61,6 +62,9 @@ export const Mention = Node.create<MentionOptions>({
     const options = this.options;
     return [
       Suggestion<MentionItem>({
+        pluginKey: new PluginKey("mentionSuggestion"),
+        // Entity names contain spaces, so keep the picker open across them.
+        allowSpaces: true,
         editor: this.editor,
         char: "[[",
         allowedPrefixes: null,

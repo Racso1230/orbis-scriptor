@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useCreateEntity, useEntities, useEntityTypes } from "@/features/entities/queries";
 import type { SaveStatus } from "@/features/entities/use-autosave";
 import { useAutosave } from "@/features/entities/use-autosave";
+import type { EntitySummary } from "@/lib/bindings";
 import { cn } from "@/lib/utils";
 import { useDocument, useSaveDocument } from "./queries";
 import { Mention } from "./mention";
@@ -46,9 +47,11 @@ function Editor({
   const entities = useEntities();
   const types = useEntityTypes();
   const createEntity = useCreateEntity();
-  const live = useRef({ entities, types, createEntity });
+  // `created` remembers entities made from the picker until the entity list
+  // has refetched, so their names resolve immediately (e.g. for plain text).
+  const live = useRef({ entities, types, createEntity, created: [] as EntitySummary[] });
   useEffect(() => {
-    live.current = { entities, types, createEntity };
+    live.current = { ...live.current, entities, types, createEntity };
   });
 
   const editor = useEditor({
@@ -59,9 +62,13 @@ function Editor({
       SlashCommand,
       // eslint-disable-next-line react-hooks/refs -- the ref is read lazily inside callbacks, never during render
       Mention.configure({
-        getEntities: () => live.current.entities.data ?? [],
+        getEntities: () => [...(live.current.entities.data ?? []), ...live.current.created],
         getTypes: () => live.current.types.data ?? [],
-        createEntity: (type, name) => live.current.createEntity.mutateAsync({ type, name }),
+        createEntity: async (type, name) => {
+          const entity = await live.current.createEntity.mutateAsync({ type, name });
+          live.current.created.push(entity);
+          return entity;
+        },
       }),
     ],
     content: parseContent(initialContent),

@@ -1,5 +1,6 @@
 import { Extension, type Editor, type Range } from "@tiptap/core";
 import { ReactRenderer } from "@tiptap/react";
+import { PluginKey } from "@tiptap/pm/state";
 import Suggestion, { type SuggestionProps } from "@tiptap/suggestion";
 import { filterSlashItems, type SlashItem } from "./slash-items";
 import { SlashMenu, type SlashMenuHandle, type SlashMenuProps } from "./slash-menu";
@@ -15,6 +16,8 @@ export const SlashCommand = Extension.create({
   addProseMirrorPlugins() {
     return [
       Suggestion<SlashItem>({
+        // Each Suggestion instance needs its own key; Mention has one too.
+        pluginKey: new PluginKey("slashCommand"),
         editor: this.editor,
         char: "/",
         startOfLine: false,
