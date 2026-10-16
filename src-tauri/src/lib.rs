@@ -23,6 +23,12 @@ fn specta_builder() -> Builder<tauri::Wry> {
         commands::world::current_world,
         commands::world::list_recent_worlds,
         commands::world::remove_recent_world,
+        commands::entities::entity_types,
+        commands::entities::list_entities,
+        commands::entities::get_entity,
+        commands::entities::create_entity,
+        commands::entities::update_entity,
+        commands::entities::delete_entity,
     ])
 }
 

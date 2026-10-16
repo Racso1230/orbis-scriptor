@@ -8,6 +8,7 @@ use std::sync::Mutex;
 
 use rusqlite::Connection;
 
+use crate::error::{AppError, AppResult};
 use crate::models::world::{WorldManifest, WorldSummary};
 
 /// Everything that belongs to the currently open world.
@@ -38,4 +39,22 @@ impl WorldHandle {
 #[derive(Default)]
 pub struct AppState {
     pub world: Mutex<Option<WorldHandle>>,
+}
+
+impl AppState {
+    /// Runs `f` with the open world, holding the lock for the duration.
+    ///
+    /// `impl FnOnce(&WorldHandle) -> AppResult<T>` means "any closure that
+    /// takes a borrowed handle and returns a result"; the closure is called at
+    /// most once. Keep the work inside short — other commands wait meanwhile.
+    pub fn with_world<T>(&self, f: impl FnOnce(&WorldHandle) -> AppResult<T>) -> AppResult<T> {
+        let guard = self
+            .world
+            .lock()
+            .map_err(|_| AppError::Internal("world state lock is poisoned".into()))?;
+        let handle = guard
+            .as_ref()
+            .ok_or_else(|| AppError::Validation("No world is open".into()))?;
+        f(handle)
+    }
 }

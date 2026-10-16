@@ -26,6 +26,17 @@ export const commands = {
 } | null, AppError>(__TAURI_INVOKE("current_world")),
 	listRecentWorlds: () => typedError<RecentWorld[], AppError>(__TAURI_INVOKE("list_recent_worlds")),
 	removeRecentWorld: (path: string) => typedError<null, AppError>(__TAURI_INVOKE("remove_recent_world", { path })),
+	/**
+	 *  The built-in entity types with their fields (the sidebar and forms are
+	 *  driven by this).
+	 */
+	entityTypes: () => __TAURI_INVOKE<EntityTypeDef[]>("entity_types"),
+	/**  Lists entities of one type, or all of them when `entity_type` is null. */
+	listEntities: (entityType: string | null) => typedError<EntitySummary[], AppError>(__TAURI_INVOKE("list_entities", { entityType })),
+	getEntity: (id: string) => typedError<Entity, AppError>(__TAURI_INVOKE("get_entity", { id })),
+	createEntity: (input: NewEntity) => typedError<Entity, AppError>(__TAURI_INVOKE("create_entity", { input })),
+	updateEntity: (id: string, patch: EntityPatch) => typedError<Entity, AppError>(__TAURI_INVOKE("update_entity", { id, patch })),
+	deleteEntity: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("delete_entity", { id })),
 };
 
 /* Types */
@@ -46,6 +57,69 @@ export type AppError = { kind: "io"; message: string } | { kind: "validation"; m
 export type AppInfo = {
 	name: string,
 	version: string,
+};
+
+/**  A full entity row. */
+export type Entity = {
+	id: string,
+	/**
+	 *  `type` is a Rust keyword, so the field is `entity_type` in Rust and
+	 *  renamed to `type` in JSON/TypeScript.
+	 */
+	type: string,
+	name: string,
+	summary: string,
+	/**
+	 *  Type-specific fields as a JSON object (see `entity_type::FieldDef`).
+	 *  Exported to TypeScript as `{ [key: string]: unknown }` because specta
+	 *  refuses `serde_json::Value`'s 64-bit numbers.
+	 */
+	properties: { [key in string]: unknown },
+	createdAt: string,
+	updatedAt: string,
+};
+
+/**  Input for `update_entity`: only the fields that are `Some` change. */
+export type EntityPatch = {
+	name: string | null,
+	summary: string | null,
+	properties: { [key in string]: unknown } | null,
+};
+
+/**  The light version used by the sidebar list. */
+export type EntitySummary = {
+	id: string,
+	type: string,
+	name: string,
+	updatedAt: string,
+};
+
+export type EntityTypeDef = {
+	/**  Stored in `entities.type`, e.g. `character`. */
+	key: string,
+	label: string,
+	plural: string,
+	/**  A lucide icon name the frontend maps to a component. */
+	icon: string,
+	fields: FieldDef[],
+};
+
+export type FieldDef = {
+	/**  Key inside the entity's `properties` JSON object. */
+	key: string,
+	label: string,
+	kind: FieldKind,
+	/**  Choices for `Select`; empty for other kinds. */
+	options: string[],
+};
+
+/**  How a type-specific field is edited. */
+export type FieldKind = "text" | "number" | "select";
+
+/**  Input for `create_entity`. */
+export type NewEntity = {
+	type: string,
+	name: string,
 };
 
 /**  One row of the "recent worlds" list on the welcome screen. */

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use specta::Type;
@@ -14,6 +16,9 @@ pub struct Entity {
     pub name: String,
     pub summary: String,
     /// Type-specific fields as a JSON object (see `entity_type::FieldDef`).
+    /// Exported to TypeScript as `{ [key: string]: unknown }` because specta
+    /// refuses `serde_json::Value`'s 64-bit numbers.
+    #[specta(type = HashMap<String, specta_typescript::Unknown>)]
     pub properties: Value,
     pub created_at: String,
     pub updated_at: String,
@@ -45,5 +50,6 @@ pub struct NewEntity {
 pub struct EntityPatch {
     pub name: Option<String>,
     pub summary: Option<String>,
+    #[specta(type = Option<HashMap<String, specta_typescript::Unknown>>)]
     pub properties: Option<Value>,
 }
