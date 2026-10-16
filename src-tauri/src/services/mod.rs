@@ -2,3 +2,4 @@
 //! and return `AppResult`s, which keeps them easy to unit test.
 
 pub mod app;
+pub mod world;

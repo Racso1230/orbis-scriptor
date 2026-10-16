@@ -3,11 +3,32 @@
 //! Tauri "managed state" is registered once with `.manage(...)` and any
 //! command can then ask for it as a `tauri::State<'_, AppState>` argument.
 
+use std::path::PathBuf;
 use std::sync::Mutex;
 
+use rusqlite::Connection;
+
+use crate::models::world::{WorldManifest, WorldSummary};
+
 /// Everything that belongs to the currently open world.
-/// Phase 1 fills this in (database connection, folder path, ...).
-pub struct WorldHandle;
+///
+/// Dropping this struct closes the database connection, so "close world" is
+/// simply `*state.world = None`.
+pub struct WorldHandle {
+    /// Absolute path of the world folder (`PathBuf` = owned path).
+    pub path: PathBuf,
+    pub manifest: WorldManifest,
+    pub conn: Connection,
+}
+
+impl WorldHandle {
+    pub fn summary(&self) -> WorldSummary {
+        WorldSummary {
+            name: self.manifest.name.clone(),
+            path: self.path.to_string_lossy().into_owned(),
+        }
+    }
+}
 
 /// Shared state for the whole app.
 ///

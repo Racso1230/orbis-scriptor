@@ -5,3 +5,4 @@
 //! matching TypeScript type into `src/lib/bindings.ts`).
 
 pub mod app;
+pub mod world;
