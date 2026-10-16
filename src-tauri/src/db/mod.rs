@@ -1,5 +1,6 @@
 //! Database layer: SQL and row mapping live here and nowhere else.
 
+pub mod entities;
 pub mod migrations;
 
 use std::path::Path;
@@ -49,7 +50,7 @@ mod tests {
             .unwrap();
         assert_eq!(fk, 1);
         assert_eq!(journal.to_lowercase(), "wal");
-        assert_eq!(version, 1);
+        assert_eq!(version, migrations::LATEST_VERSION);
 
         // The meta table from migration 001 is usable.
         conn.execute("INSERT INTO meta (key, value) VALUES ('a', 'b')", [])

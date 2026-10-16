@@ -5,4 +5,6 @@
 //! matching TypeScript type into `src/lib/bindings.ts`).
 
 pub mod app;
+pub mod entity;
+pub mod entity_type;
 pub mod world;

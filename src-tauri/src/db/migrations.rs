@@ -16,9 +16,25 @@ const MIGRATIONS_SLICE: &[M<'_>] = &[
             value TEXT NOT NULL
         );",
     ),
+    // 002: entities — characters, locations, factions, items, notes.
+    M::up(
+        "CREATE TABLE entities (
+            id          TEXT PRIMARY KEY,           -- UUID v7
+            type        TEXT NOT NULL,              -- see models::entity_type
+            name        TEXT NOT NULL,
+            summary     TEXT NOT NULL DEFAULT '',
+            properties  TEXT NOT NULL DEFAULT '{}', -- JSON, type-specific fields
+            created_at  TEXT NOT NULL,
+            updated_at  TEXT NOT NULL
+        );
+        CREATE INDEX idx_entities_type_name ON entities(type, name);",
+    ),
 ];
 
 pub const MIGRATIONS: Migrations<'_> = Migrations::from_slice(MIGRATIONS_SLICE);
+
+/// The schema version a fully migrated database reports in `user_version`.
+pub const LATEST_VERSION: u32 = MIGRATIONS_SLICE.len() as u32;
 
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
@@ -44,7 +60,7 @@ mod tests {
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
 
-        assert_eq!(v1, 1);
+        assert_eq!(v1, LATEST_VERSION);
         assert_eq!(v1, v2);
     }
 }
