@@ -10,12 +10,12 @@ Read `CLAUDE.md` first. Implement **one phase per session**, in order. Each phas
 
 **Goal:** an empty but properly structured app that builds and runs on Windows and Linux.
 
-- [ ] Create a Tauri 2 app with React + TypeScript + Vite in the repo root (`orbis-scriptor`)
-- [ ] App identifier `com.<owner>.orbisscriptor`, window title "Orbis Scriptor", sensible default window size (1400×900, min 1000×650)
-- [ ] Tailwind CSS + shadcn/ui configured, with light and dark themes using CSS variables
-- [ ] Choose and configure a router
-- [ ] ESLint, Prettier, `typecheck` script; `rustfmt` and `clippy` config
-- [ ] Folder structure:
+- [x] Create a Tauri 2 app with React + TypeScript + Vite in the repo root (`orbis-scriptor`)
+- [x] App identifier `com.racso1230.orbisscriptor`, window title "Orbis Scriptor", sensible default window size (1400×900, min 1000×650)
+- [x] Tailwind CSS + shadcn/ui configured, with light and dark themes using CSS variables
+- [x] Choose and configure a router — **decision: TanStack Router, code-based routes in `src/router.tsx`, hash history**
+- [x] ESLint, Prettier, `typecheck` script; `rustfmt` and `clippy` config
+- [x] Folder structure:
   ```
   src/
     features/          # one folder per feature
@@ -26,12 +26,12 @@ Read `CLAUDE.md` first. Implement **one phase per session**, in order. Each phas
     commands/  services/  db/  models/  error.rs  state.rs  lib.rs
   docs/
   ```
-- [ ] `AppError` enum with `thiserror`, serialised to `{ kind, message }`
-- [ ] `tauri-specta` set up; one example command `app_info()` returning name + version, called from React through the generated bindings and shown on screen
-- [ ] TanStack Query provider set up
-- [ ] Vitest + Testing Library with one passing test; one Rust unit test
-- [ ] GitHub Actions workflow: on push/PR run lint, typecheck, tests, clippy, and build on `windows-latest` and `ubuntu-latest` (install WebKitGTK deps on Linux)
-- [ ] README: what the app is, prerequisites (Rust, Node, Linux system packages), how to run, test and build
+- [x] `AppError` enum with `thiserror`, serialised to `{ kind, message }`
+- [x] `tauri-specta` set up; one example command `app_info()` returning name + version, called from React through the generated bindings and shown on screen
+- [x] TanStack Query provider set up
+- [x] Vitest + Testing Library with one passing test; one Rust unit test
+- [x] GitHub Actions workflow: on push/PR run lint, typecheck, tests, clippy, and build on `windows-latest` and `ubuntu-latest` (install WebKitGTK deps on Linux)
+- [x] README: what the app is, prerequisites (Rust, Node, Linux system packages), how to run, test and build
 
 **Acceptance:** `npm run tauri dev` opens a themed window showing the app name and version fetched from Rust. CI is green on both platforms.
 
