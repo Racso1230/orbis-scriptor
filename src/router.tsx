@@ -6,6 +6,7 @@ import {
   redirect,
 } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
+import { EntityPage } from "@/features/entities/entity-page";
 import { currentWorldQuery } from "@/features/worlds/queries";
 import { WelcomePage } from "@/features/worlds/welcome-page";
 import { WorldEmptyState, WorldLayout } from "@/features/worlds/world-layout";
@@ -42,7 +43,17 @@ const worldIndexRoute = createRoute({
   component: WorldEmptyState,
 });
 
-const routeTree = rootRoute.addChildren([indexRoute, worldRoute.addChildren([worldIndexRoute])]);
+// `/world/entity/$id` — one entity's page; `$id` is a path parameter.
+const entityRoute = createRoute({
+  getParentRoute: () => worldRoute,
+  path: "/entity/$id",
+  component: EntityPage,
+});
+
+const routeTree = rootRoute.addChildren([
+  indexRoute,
+  worldRoute.addChildren([worldIndexRoute, entityRoute]),
+]);
 
 // Hash history keeps URLs working both in `tauri dev` and in the packaged app,
 // where the frontend is served from a custom protocol rather than a web server.
