@@ -103,12 +103,12 @@ CREATE TABLE documents (
 );
 ```
 
-- [ ] TipTap editor on the entity page below the fields: headings, bold/italic, lists, quotes, horizontal rule, links, tables
-- [ ] Slash-command menu for block types
-- [ ] Commands: `get_document(entity_id)`, `save_document(entity_id, content, plain_text)`
-- [ ] Debounced autosave (shared with the Phase 2 indicator)
-- [ ] Editor styling that works in light and dark themes
-- [ ] Tests: save/load round trip; cascade delete when the entity is deleted
+- [x] TipTap editor on the entity page below the fields: headings, bold/italic, lists, quotes, horizontal rule, links, tables (`src/features/lore/lore-editor.tsx`; StarterKit + TableKit)
+- [x] Slash-command menu for block types (`slash-command.ts` on `@tiptap/suggestion`)
+- [x] Commands: `get_document(entity_id)`, `save_document(entity_id, content, plain_text)`
+- [x] Debounced autosave (shared with the Phase 2 indicator — the entity page shows the "worst" of the fields and lore states)
+- [x] Editor styling that works in light and dark themes (`@tailwindcss/typography` `prose` / `dark:prose-invert`)
+- [x] Tests: save/load round trip; cascade delete when the entity is deleted
 
 **Acceptance:** write formatted lore for a character, restart, and see it exactly as written.
 
