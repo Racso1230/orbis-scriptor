@@ -41,6 +41,8 @@ export const commands = {
 	getDocument: (entityId: string) => typedError<Document, AppError>(__TAURI_INVOKE("get_document", { entityId })),
 	/**  Saves the editor's JSON plus the plain text used for search. */
 	saveDocument: (entityId: string, content: string, plainText: string) => typedError<Document, AppError>(__TAURI_INVOKE("save_document", { entityId, content, plainText })),
+	/**  Entities whose lore mentions `entity_id`. */
+	getBacklinks: (entityId: string) => typedError<Backlink[], AppError>(__TAURI_INVOKE("get_backlinks", { entityId })),
 };
 
 /* Types */
@@ -61,6 +63,14 @@ export type AppError = { kind: "io"; message: string } | { kind: "validation"; m
 export type AppInfo = {
 	name: string,
 	version: string,
+};
+
+/**  One entity that mentions another, with a snippet of the surrounding text. */
+export type Backlink = {
+	sourceId: string,
+	sourceType: string,
+	sourceName: string,
+	snippet: string,
 };
 
 /**

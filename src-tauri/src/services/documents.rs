@@ -6,6 +6,7 @@ use rusqlite::Connection;
 use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::models::document::Document;
+use crate::services::links;
 
 /// An empty TipTap document, returned when an entity has no lore yet so the
 /// frontend never has to special-case "no row".
@@ -45,16 +46,21 @@ pub fn save(
     ensure_entity_exists(conn, entity_id)?;
     // We don't interpret the JSON, but we refuse to store something that
     // isn't JSON at all so a bug can't corrupt a world silently.
-    if serde_json::from_str::<serde_json::Value>(&content).is_err() {
-        return Err(AppError::Validation("Document content must be JSON".into()));
-    }
+    let parsed: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|_| AppError::Validation("Document content must be JSON".into()))?;
     let doc = Document {
         entity_id: entity_id.to_owned(),
         content,
         plain_text,
         updated_at: now(),
     };
-    db::documents::upsert(conn, &doc)?;
+    // The document and its mention links change together or not at all.
+    // `unchecked_transaction` works with a shared `&Connection`; it is "unchecked"
+    // only in that the compiler can't stop us nesting transactions.
+    let tx = conn.unchecked_transaction()?;
+    db::documents::upsert(&tx, &doc)?;
+    links::sync_mentions(&tx, entity_id, &parsed)?;
+    tx.commit()?;
     Ok(doc)
 }
 

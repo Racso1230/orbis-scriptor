@@ -38,6 +38,19 @@ const MIGRATIONS_SLICE: &[M<'_>] = &[
             updated_at  TEXT NOT NULL
         );",
     ),
+    // 004: links between entities (mentions now, relationships in Phase 9).
+    M::up(
+        "CREATE TABLE links (
+            id          TEXT PRIMARY KEY,
+            source_id   TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+            target_id   TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+            kind        TEXT NOT NULL,   -- 'mention' (from documents) or a relationship kind
+            label       TEXT,
+            created_at  TEXT NOT NULL,
+            UNIQUE (source_id, target_id, kind)
+        );
+        CREATE INDEX idx_links_target ON links(target_id);",
+    ),
 ];
 
 pub const MIGRATIONS: Migrations<'_> = Migrations::from_slice(MIGRATIONS_SLICE);

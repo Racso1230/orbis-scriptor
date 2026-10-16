@@ -8,4 +8,5 @@ pub mod app;
 pub mod document;
 pub mod entity;
 pub mod entity_type;
+pub mod link;
 pub mod world;

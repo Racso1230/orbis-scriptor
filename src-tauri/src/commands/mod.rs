@@ -5,4 +5,5 @@
 pub mod app;
 pub mod documents;
 pub mod entities;
+pub mod links;
 pub mod world;
