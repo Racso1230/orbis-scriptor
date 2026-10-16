@@ -24,6 +24,15 @@ thiserror = "2"
 specta = { version = "=2.0.0-rc.25", features = ["derive"] }
 specta-typescript = "0.0.12"
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
+# SQLite compiled into the binary (`bundled`) so users need nothing installed.
+rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite_migration = "2.6"
+uuid = { version = "1", features = ["v7", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+[dev-dependencies]
+# Temporary folders for tests; deleted automatically when dropped.
+tempfile = "3"
 
 [lints.clippy]
 # CLAUDE.md rule 3: no unwrap()/expect() outside tests and startup code.

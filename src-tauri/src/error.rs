@@ -42,6 +42,24 @@ impl From<std::io::Error> for AppError {
     }
 }
 
+impl From<rusqlite::Error> for AppError {
+    fn from(err: rusqlite::Error) -> Self {
+        AppError::Database(err.to_string())
+    }
+}
+
+impl From<rusqlite_migration::Error> for AppError {
+    fn from(err: rusqlite_migration::Error) -> Self {
+        AppError::Database(err.to_string())
+    }
+}
+
+impl From<serde_json::Error> for AppError {
+    fn from(err: serde_json::Error) -> Self {
+        AppError::Internal(err.to_string())
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
