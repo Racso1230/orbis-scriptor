@@ -13,24 +13,24 @@ The full roadmap lives in `docs/DEVELOPMENT_PLAN.md`. Work through it **one phas
 
 ## Stack
 
-| Area | Choice |
-|---|---|
-| Desktop shell | Tauri 2 |
-| Backend | Rust (stable) |
-| Database | SQLite via `rusqlite` (feature `bundled`), migrations via `rusqlite_migration` |
-| Search | SQLite FTS5 |
-| Rust ↔ TS types | `tauri-specta` (generated bindings in `src/lib/bindings.ts`, never hand-edited) |
-| Frontend | React + TypeScript (strict) + Vite |
-| Styling | Tailwind CSS + shadcn/ui |
-| Server state | TanStack Query |
-| UI state | Zustand |
-| Routing | TanStack Router or React Router (pick one in Phase 0, then stay consistent) |
-| Map | Konva via `react-konva` |
-| Rich text | TipTap |
-| Relationship graph | React Flow (`@xyflow/react`) |
-| Timeline | Custom SVG component |
-| Tests | Vitest + Testing Library, Rust `#[test]`, Playwright (later) |
-| CI | GitHub Actions (Windows + Linux) |
+| Area               | Choice                                                                          |
+| ------------------ | ------------------------------------------------------------------------------- |
+| Desktop shell      | Tauri 2                                                                         |
+| Backend            | Rust (stable)                                                                   |
+| Database           | SQLite via `rusqlite` (feature `bundled`), migrations via `rusqlite_migration`  |
+| Search             | SQLite FTS5                                                                     |
+| Rust ↔ TS types    | `tauri-specta` (generated bindings in `src/lib/bindings.ts`, never hand-edited) |
+| Frontend           | React + TypeScript (strict) + Vite                                              |
+| Styling            | Tailwind CSS + shadcn/ui                                                        |
+| Server state       | TanStack Query                                                                  |
+| UI state           | Zustand                                                                         |
+| Routing            | TanStack Router or React Router (pick one in Phase 0, then stay consistent)     |
+| Map                | Konva via `react-konva`                                                         |
+| Rich text          | TipTap                                                                          |
+| Relationship graph | React Flow (`@xyflow/react`)                                                    |
+| Timeline           | Custom SVG component                                                            |
+| Tests              | Vitest + Testing Library, Rust `#[test]`, Playwright (later)                    |
+| CI                 | GitHub Actions (Windows + Linux)                                                |
 
 Use the latest **stable** versions of each library. If a library's current API differs from what you expect, check its docs rather than guessing.
 
