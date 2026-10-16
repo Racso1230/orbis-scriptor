@@ -29,6 +29,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
         commands::entities::create_entity,
         commands::entities::update_entity,
         commands::entities::delete_entity,
+        commands::documents::get_document,
+        commands::documents::save_document,
     ])
 }
 

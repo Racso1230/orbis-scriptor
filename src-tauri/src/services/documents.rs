@@ -1,0 +1,121 @@
+//! Lore documents: one rich-text document per entity.
+
+use chrono::{SecondsFormat, Utc};
+use rusqlite::Connection;
+
+use crate::db;
+use crate::error::{AppError, AppResult};
+use crate::models::document::Document;
+
+/// An empty TipTap document, returned when an entity has no lore yet so the
+/// frontend never has to special-case "no row".
+pub const EMPTY_CONTENT: &str = r#"{"type":"doc","content":[]}"#;
+
+fn now() -> String {
+    Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
+}
+
+fn ensure_entity_exists(conn: &Connection, entity_id: &str) -> AppResult<()> {
+    if db::entities::get(conn, entity_id)?.is_none() {
+        return Err(AppError::NotFound(format!(
+            "Entity {entity_id} does not exist"
+        )));
+    }
+    Ok(())
+}
+
+pub fn get(conn: &Connection, entity_id: &str) -> AppResult<Document> {
+    ensure_entity_exists(conn, entity_id)?;
+    Ok(
+        db::documents::get(conn, entity_id)?.unwrap_or_else(|| Document {
+            entity_id: entity_id.to_owned(),
+            content: EMPTY_CONTENT.to_owned(),
+            plain_text: String::new(),
+            updated_at: String::new(),
+        }),
+    )
+}
+
+pub fn save(
+    conn: &Connection,
+    entity_id: &str,
+    content: String,
+    plain_text: String,
+) -> AppResult<Document> {
+    ensure_entity_exists(conn, entity_id)?;
+    // We don't interpret the JSON, but we refuse to store something that
+    // isn't JSON at all so a bug can't corrupt a world silently.
+    if serde_json::from_str::<serde_json::Value>(&content).is_err() {
+        return Err(AppError::Validation("Document content must be JSON".into()));
+    }
+    let doc = Document {
+        entity_id: entity_id.to_owned(),
+        content,
+        plain_text,
+        updated_at: now(),
+    };
+    db::documents::upsert(conn, &doc)?;
+    Ok(doc)
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::db::migrations::MIGRATIONS;
+    use crate::models::entity::NewEntity;
+    use crate::services::entities;
+
+    fn world() -> (Connection, String) {
+        let mut c = Connection::open_in_memory().unwrap();
+        c.pragma_update(None, "foreign_keys", "ON").unwrap();
+        MIGRATIONS.to_latest(&mut c).unwrap();
+        let e = entities::create(
+            &c,
+            NewEntity {
+                entity_type: "character".into(),
+                name: "Ada".into(),
+            },
+        )
+        .unwrap();
+        (c, e.id)
+    }
+
+    #[test]
+    fn missing_document_reads_as_empty() {
+        let (c, id) = world();
+        let doc = get(&c, &id).unwrap();
+        assert_eq!(doc.content, EMPTY_CONTENT);
+        assert_eq!(doc.plain_text, "");
+    }
+
+    #[test]
+    fn save_then_get_round_trip_and_overwrite() {
+        let (c, id) = world();
+        let content = r#"{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Hi"}]}]}"#;
+        let saved = save(&c, &id, content.into(), "Hi".into()).unwrap();
+        assert_eq!(get(&c, &id).unwrap(), saved);
+
+        let again = save(&c, &id, EMPTY_CONTENT.into(), String::new()).unwrap();
+        assert_eq!(get(&c, &id).unwrap().content, EMPTY_CONTENT);
+        assert!(again.updated_at >= saved.updated_at);
+    }
+
+    #[test]
+    fn rejects_unknown_entity_and_non_json() {
+        let (c, id) = world();
+        assert!(matches!(get(&c, "nope"), Err(AppError::NotFound(_))));
+        assert!(matches!(
+            save(&c, &id, "not json".into(), String::new()),
+            Err(AppError::Validation(_))
+        ));
+    }
+
+    #[test]
+    fn deleting_the_entity_cascades_to_its_document() {
+        let (c, id) = world();
+        save(&c, &id, EMPTY_CONTENT.into(), String::new()).unwrap();
+        entities::delete(&c, &id).unwrap();
+        assert!(db::documents::get(&c, &id).unwrap().is_none());
+    }
+}

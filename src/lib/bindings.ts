@@ -37,6 +37,10 @@ export const commands = {
 	createEntity: (input: NewEntity) => typedError<Entity, AppError>(__TAURI_INVOKE("create_entity", { input })),
 	updateEntity: (id: string, patch: EntityPatch) => typedError<Entity, AppError>(__TAURI_INVOKE("update_entity", { id, patch })),
 	deleteEntity: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("delete_entity", { id })),
+	/**  The lore document of an entity (empty document if none was saved yet). */
+	getDocument: (entityId: string) => typedError<Document, AppError>(__TAURI_INVOKE("get_document", { entityId })),
+	/**  Saves the editor's JSON plus the plain text used for search. */
+	saveDocument: (entityId: string, content: string, plainText: string) => typedError<Document, AppError>(__TAURI_INVOKE("save_document", { entityId, content, plainText })),
 };
 
 /* Types */
@@ -57,6 +61,22 @@ export type AppError = { kind: "io"; message: string } | { kind: "validation"; m
 export type AppInfo = {
 	name: string,
 	version: string,
+};
+
+/**
+ *  The rich-text lore of one entity. One document per entity, created on
+ *  first save.
+ */
+export type Document = {
+	entityId: string,
+	/**
+	 *  TipTap JSON, kept as a string: the backend only stores it, the editor
+	 *  is the one that understands its shape.
+	 */
+	content: string,
+	/**  Plain text extracted by the editor, used for search (Phase 5). */
+	plainText: string,
+	updatedAt: string,
 };
 
 /**  A full entity row. */

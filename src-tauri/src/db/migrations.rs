@@ -29,6 +29,15 @@ const MIGRATIONS_SLICE: &[M<'_>] = &[
         );
         CREATE INDEX idx_entities_type_name ON entities(type, name);",
     ),
+    // 003: one rich-text lore document per entity.
+    M::up(
+        "CREATE TABLE documents (
+            entity_id   TEXT PRIMARY KEY REFERENCES entities(id) ON DELETE CASCADE,
+            content     TEXT NOT NULL,   -- TipTap JSON
+            plain_text  TEXT NOT NULL,   -- extracted for search
+            updated_at  TEXT NOT NULL
+        );",
+    ),
 ];
 
 pub const MIGRATIONS: Migrations<'_> = Migrations::from_slice(MIGRATIONS_SLICE);

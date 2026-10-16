@@ -3,5 +3,6 @@
 //! TypeScript signature is generated.
 
 pub mod app;
+pub mod documents;
 pub mod entities;
 pub mod world;
