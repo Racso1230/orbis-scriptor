@@ -1,14 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { TableKit } from "@tiptap/extension-table";
 import { Placeholder } from "@tiptap/extensions";
 import { Bold, Italic, Link as LinkIcon, Table2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useCreateEntity, useEntities, useEntityTypes } from "@/features/entities/queries";
 import type { SaveStatus } from "@/features/entities/use-autosave";
 import { useAutosave } from "@/features/entities/use-autosave";
 import { cn } from "@/lib/utils";
 import { useDocument, useSaveDocument } from "./queries";
+import { Mention } from "./mention";
 import { SlashCommand } from "./slash-command";
 
 interface LoreEditorProps {
@@ -40,12 +42,27 @@ function Editor({
   const saveDocument = useSaveDocument();
   const [draft, setDraft] = useState({ content: initialContent, plainText: "" });
 
+  // The Mention extension is created once, so it reads live data through refs.
+  const entities = useEntities();
+  const types = useEntityTypes();
+  const createEntity = useCreateEntity();
+  const live = useRef({ entities, types, createEntity });
+  useEffect(() => {
+    live.current = { entities, types, createEntity };
+  });
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
       TableKit.configure({ table: { resizable: false } }),
       Placeholder.configure({ placeholder: "Write the lore… type / for blocks" }),
       SlashCommand,
+      // eslint-disable-next-line react-hooks/refs -- the ref is read lazily inside callbacks, never during render
+      Mention.configure({
+        getEntities: () => live.current.entities.data ?? [],
+        getTypes: () => live.current.types.data ?? [],
+        createEntity: (type, name) => live.current.createEntity.mutateAsync({ type, name }),
+      }),
     ],
     content: parseContent(initialContent),
     editorProps: {

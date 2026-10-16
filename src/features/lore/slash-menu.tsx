@@ -1,10 +1,16 @@
 import { forwardRef, useEffect, useImperativeHandle, useState } from "react";
 import { cn } from "@/lib/utils";
-import type { SlashItem } from "./slash-items";
+/** What a menu row needs; slash items and mention items both satisfy it. */
+export interface MenuEntry {
+  title: string;
+  description: string;
+}
 
 export interface SlashMenuProps {
-  items: SlashItem[];
-  command: (item: SlashItem) => void;
+  items: MenuEntry[];
+  // Method syntax (not an arrow type) so callers may pass a handler typed for
+  // their own narrower item type.
+  command(item: MenuEntry): void;
   /** Where to show the menu (from the suggestion plugin's clientRect). */
   rect: DOMRect | null;
 }

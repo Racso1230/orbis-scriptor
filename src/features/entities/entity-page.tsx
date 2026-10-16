@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { BacklinksPanel } from "@/features/lore/backlinks-panel";
 import { LoreEditor } from "@/features/lore/lore-editor";
 import { useCurrentWorld } from "@/features/worlds/queries";
 import type { Entity, EntityTypeDef, FieldDef } from "@/lib/bindings";
@@ -166,6 +167,8 @@ function EntityForm({ entity, type }: { entity: Entity; type: EntityTypeDef | un
         <Label>Lore</Label>
         <LoreEditor entityId={entity.id} onStatusChange={onLoreStatus} />
       </div>
+
+      <BacklinksPanel entityId={entity.id} />
     </div>
   );
 }

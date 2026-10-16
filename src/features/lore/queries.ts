@@ -6,6 +6,19 @@ export const documentKeys = {
   detail: (entityId: string) => ["documents", entityId] as const,
 };
 
+export const backlinkKeys = {
+  all: ["backlinks"] as const,
+  detail: (entityId: string) => ["backlinks", entityId] as const,
+};
+
+/** Entities whose lore mentions this one. */
+export function useBacklinks(entityId: string) {
+  return useQuery({
+    queryKey: backlinkKeys.detail(entityId),
+    queryFn: () => unwrap(commands.getBacklinks(entityId)),
+  });
+}
+
 export function useDocument(entityId: string) {
   return useQuery({
     queryKey: documentKeys.detail(entityId),
@@ -29,6 +42,8 @@ export function useSaveDocument() {
     }) => unwrap(commands.saveDocument(entityId, content, plainText)),
     onSuccess: (doc: Document) => {
       queryClient.setQueryData(documentKeys.detail(doc.entityId), doc);
+      // Mentions may have changed, so every backlinks list is suspect.
+      return queryClient.invalidateQueries({ queryKey: backlinkKeys.all });
     },
   });
 }
