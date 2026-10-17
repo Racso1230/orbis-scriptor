@@ -14,3 +14,8 @@ pub struct Backlink {
     pub source_name: String,
     pub snippet: String,
 }
+
+/// Link kind connecting an entity to an event it took part in.
+/// Direction: `source` = the involved entity, `target` = the event
+/// (read it as "source is involved in target").
+pub const KIND_INVOLVED_IN: &str = "involved_in";

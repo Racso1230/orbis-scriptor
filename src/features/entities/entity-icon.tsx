@@ -1,6 +1,7 @@
 // `Map` is renamed so it does not shadow the global JavaScript Map.
 import {
   Box,
+  CalendarDays,
   Flag,
   Map as MapIcon,
   MapPin,
@@ -18,6 +19,7 @@ const ICONS: Record<string, React.ComponentType<LucideProps>> = {
   sword: Sword,
   "sticky-note": StickyNote,
   map: MapIcon,
+  "calendar-days": CalendarDays,
 };
 
 export function EntityIcon({ icon, ...props }: { icon: string } & LucideProps) {

@@ -17,6 +17,7 @@ const LOOKS: Record<string, PinLook> = {
   item: { color: "#d97706", glyph: "I" },
   note: { color: "#ca8a04", glyph: "N" },
   map: { color: "#7c3aed", glyph: "M" },
+  event: { color: "#db2777", glyph: "E" },
 };
 
 /** Look of a pin: by linked entity type, grey when unlinked or the entity is gone. */

@@ -9,6 +9,7 @@ pub mod calendar;
 pub mod document;
 pub mod entity;
 pub mod entity_type;
+pub mod event;
 pub mod link;
 pub mod map;
 pub mod search;

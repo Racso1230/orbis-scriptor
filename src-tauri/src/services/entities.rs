@@ -10,7 +10,7 @@ use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::models::entity::{Entity, EntityPatch, EntitySummary, NewEntity};
 use crate::models::entity_type;
-use crate::services::{maps, search};
+use crate::services::{events, maps, search};
 
 /// UTC ISO-8601 with milliseconds and a `Z` suffix.
 fn now() -> String {
@@ -46,6 +46,31 @@ fn validate_properties(properties: &Value) -> AppResult<()> {
 }
 
 pub fn create(conn: &Connection, input: NewEntity) -> AppResult<Entity> {
+    // A plain `event` created here starts on day 0 with no end.
+    create_with_dates(conn, input, 0, None)
+}
+
+/// Creates an `event` entity with the given dates in one transaction.
+pub fn create_event(
+    conn: &Connection,
+    input: NewEntity,
+    start_day: i64,
+    end_day: Option<i64>,
+) -> AppResult<Entity> {
+    if input.entity_type != "event" {
+        return Err(AppError::Validation("Not an event entity".into()));
+    }
+    create_with_dates(conn, input, start_day, end_day)
+}
+
+/// Shared by both functions above. The dates are only used for `event`
+/// entities and ignored for every other type.
+fn create_with_dates(
+    conn: &Connection,
+    input: NewEntity,
+    start_day: i64,
+    end_day: Option<i64>,
+) -> AppResult<Entity> {
     validate_type(&input.entity_type)?;
     let name = validate_name(&input.name)?;
     let timestamp = now();
@@ -66,6 +91,10 @@ pub fn create(conn: &Connection, input: NewEntity) -> AppResult<Entity> {
     // A `map` entity also needs its `maps` row and default layer.
     if entity.entity_type == "map" {
         maps::create_for_entity(&tx, &entity.id)?;
+    }
+    // An `event` entity needs its `events` row (default calendar).
+    if entity.entity_type == "event" {
+        events::create_for_entity(&tx, &entity.id, start_day, end_day)?;
     }
     search::reindex_entity(&tx, &entity.id)?;
     tx.commit()?;

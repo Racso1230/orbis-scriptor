@@ -5,6 +5,7 @@ use rusqlite::{Connection, params};
 use uuid::Uuid;
 
 use crate::error::AppResult;
+use crate::models::entity::EntitySummary;
 
 /// A backlink row before the service turns the text into a snippet.
 pub struct BacklinkRow {
@@ -81,5 +82,58 @@ pub fn targets_for_source(
         "SELECT target_id FROM links WHERE source_id = ?1 AND kind = ?2 ORDER BY target_id",
     )?;
     let rows = stmt.query_map(params![source_id, kind], |row| row.get(0))?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+/// Adds one link; does nothing if it already exists (UNIQUE constraint).
+pub fn insert_link(
+    conn: &Connection,
+    source_id: &str,
+    target_id: &str,
+    kind: &str,
+) -> AppResult<()> {
+    let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    conn.execute(
+        "INSERT OR IGNORE INTO links (id, source_id, target_id, kind, label, created_at)
+         VALUES (?1, ?2, ?3, ?4, NULL, ?5)",
+        params![Uuid::now_v7().to_string(), source_id, target_id, kind, now],
+    )?;
+    Ok(())
+}
+
+/// Removes one link; returns whether a row was deleted.
+pub fn delete_link(
+    conn: &Connection,
+    source_id: &str,
+    target_id: &str,
+    kind: &str,
+) -> AppResult<bool> {
+    let changed = conn.execute(
+        "DELETE FROM links WHERE source_id = ?1 AND target_id = ?2 AND kind = ?3",
+        params![source_id, target_id, kind],
+    )?;
+    Ok(changed > 0)
+}
+
+/// The entities that link to `target_id` with `kind`, by name.
+pub fn list_sources(
+    conn: &Connection,
+    target_id: &str,
+    kind: &str,
+) -> AppResult<Vec<EntitySummary>> {
+    let mut stmt = conn.prepare(
+        "SELECT e.id, e.type, e.name, e.updated_at
+         FROM links l JOIN entities e ON e.id = l.source_id
+         WHERE l.target_id = ?1 AND l.kind = ?2
+         ORDER BY e.type, e.name COLLATE NOCASE",
+    )?;
+    let rows = stmt.query_map(params![target_id, kind], |row| {
+        Ok(EntitySummary {
+            id: row.get(0)?,
+            entity_type: row.get(1)?,
+            name: row.get(2)?,
+            updated_at: row.get(3)?,
+        })
+    })?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
