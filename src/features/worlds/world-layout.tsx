@@ -1,4 +1,5 @@
 import { Outlet } from "@tanstack/react-router";
+import { CommandPalette } from "@/features/search/command-palette";
 import { EntitySidebar } from "@/features/entities/entity-sidebar";
 import { TabBar } from "@/features/entities/tab-bar";
 
@@ -15,6 +16,7 @@ export function WorldLayout() {
           <Outlet />
         </div>
       </section>
+      <CommandPalette />
     </div>
   );
 }
