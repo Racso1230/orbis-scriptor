@@ -241,6 +241,13 @@ export function MapView({ mapEntityId }: { mapEntityId: string }) {
             </Button>
           </div>
         )}
+        {hasBackground && objects.length === 0 && (
+          <p className="pointer-events-none absolute inset-x-0 bottom-4 text-center text-sm text-muted-foreground">
+            <span className="rounded-md bg-background/80 px-3 py-1.5">
+              No pins yet. Press P, then click the map to place one.
+            </span>
+          </p>
+        )}
       </div>
 
       <EntityPickerDialog
