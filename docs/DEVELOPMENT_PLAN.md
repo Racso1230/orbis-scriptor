@@ -192,17 +192,17 @@ CREATE TABLE map_objects (
 );
 ```
 
-- [ ] Add `map` as an entity type
-- [ ] `import_asset(path)`: copies the file into `assets/` (named by id), reads dimensions with the `image` crate, generates a thumbnail on a background thread
-- [ ] Serve asset files to the webview safely (Tauri asset protocol scoped to the open world's `assets/` folder)
+- [x] Add `map` as an entity type
+- [x] `import_asset(path)`: copies the file into `assets/` (named by id), reads dimensions with the `image` crate, generates a thumbnail on a background thread
+- [x] Serve asset files to the webview safely (Tauri asset protocol scoped to the open world's `assets/` folder)
 - [ ] Map view with react-konva: background image, mouse-wheel zoom around the cursor, drag to pan, zoom limits, "fit to screen"
 - [ ] Toolbar with Select and Pin tools (tool state in Zustand)
 - [ ] Pin tool: click to place; choose or create the linked entity; pin icon reflects the entity type
 - [ ] Select tool: select, drag to move (saved on drop), delete key removes, hover shows entity name
 - [ ] Double-clicking a pin opens its entity; entity pages list "appears on maps" with a jump-to link
-- [ ] One default layer per map (multi-layer UI comes in Phase 10)
+- [x] One default layer per map (multi-layer UI comes in Phase 10)
 - [ ] Performance check: 8000×6000 background image with 500 pins stays smooth on Windows **and** Linux (WebKitGTK). Record results in `docs/performance.md`; if Linux is slow, implement tiling or Konva layer caching before moving on
-- [ ] Tests: asset import; geometry round trip; deleting an entity unlinks (not deletes) its pins
+- [x] Tests: asset import; geometry round trip; deleting an entity unlinks (not deletes) its pins
 
 **Acceptance:** import a fantasy map, drop pins for three locations, double-click one to open its lore.
 
