@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { FolderOpen, FolderPlus, Trash2 } from "lucide-react";
+import { FolderOpen, FolderPlus, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,7 +15,13 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { useAppInfo } from "@/features/app/queries";
 import { folderName, pickFolder } from "./pick-folder";
-import { useCreateWorld, useOpenWorld, useRecentWorlds, useRemoveRecentWorld } from "./queries";
+import {
+  useCreateSampleWorld,
+  useCreateWorld,
+  useOpenWorld,
+  useRecentWorlds,
+  useRemoveRecentWorld,
+} from "./queries";
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -27,13 +33,14 @@ export function WelcomePage() {
   const appInfo = useAppInfo();
   const recent = useRecentWorlds();
   const createWorld = useCreateWorld();
+  const createSample = useCreateSampleWorld();
   const openWorld = useOpenWorld();
   const removeRecent = useRemoveRecentWorld();
 
   // Folder + name for the "New world" dialog; null = dialog closed.
   const [draft, setDraft] = useState<{ path: string; name: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const busy = createWorld.isPending || openWorld.isPending;
+  const busy = createWorld.isPending || openWorld.isPending || createSample.isPending;
 
   async function handleNew() {
     const path = await pickFolder("Choose an empty folder for the new world");
@@ -46,6 +53,18 @@ export function WelcomePage() {
     try {
       await createWorld.mutateAsync(draft);
       setDraft(null);
+      await navigate({ to: "/world" });
+    } catch (e) {
+      setError(messageOf(e));
+    }
+  }
+
+  async function handleSample() {
+    const parent = await pickFolder('Choose where to create "The Shattered Coast"');
+    if (!parent) return;
+    setError(null);
+    try {
+      await createSample.mutateAsync(parent);
       await navigate({ to: "/world" });
     } catch (e) {
       setError(messageOf(e));
@@ -78,6 +97,9 @@ export function WelcomePage() {
           </Button>
           <Button variant="outline" onClick={() => handleOpen()} disabled={busy}>
             <FolderOpen /> Open world
+          </Button>
+          <Button variant="outline" onClick={handleSample} disabled={busy}>
+            <Sparkles /> Create sample world
           </Button>
         </div>
 

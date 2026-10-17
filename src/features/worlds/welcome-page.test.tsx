@@ -11,11 +11,13 @@ const commands = vi.hoisted(() => ({
   listRecentWorlds: vi.fn(),
   openWorld: vi.fn(),
   createWorld: vi.fn(),
+  createSampleWorld: vi.fn(),
   removeRecentWorld: vi.fn(),
 }));
 
 vi.mock("@/lib/bindings", () => ({ commands }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn().mockResolvedValue(null) }));
+const dialogOpen = vi.hoisted(() => vi.fn());
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: dialogOpen }));
 // WelcomePage calls useNavigate; outside a RouterProvider we stub it.
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/react-router")>()),
@@ -25,6 +27,7 @@ vi.mock("@tanstack/react-router", async (importOriginal) => ({
 describe("WelcomePage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    dialogOpen.mockResolvedValue(null);
     commands.appInfo.mockResolvedValue(ok({ name: "Orbis Scriptor", version: "0.1.0" }));
     commands.currentWorld.mockResolvedValue(ok(null));
     commands.listRecentWorlds.mockResolvedValue(
@@ -60,6 +63,27 @@ describe("WelcomePage", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Remove Lost from recent worlds" }));
 
     await waitFor(() => expect(commands.removeRecentWorld).toHaveBeenCalledWith("C:/worlds/lost"));
+  });
+
+  it("creates the sample world inside the chosen folder", async () => {
+    dialogOpen.mockResolvedValue("C:/worlds");
+    commands.createSampleWorld.mockResolvedValue(
+      ok({ name: "The Shattered Coast", path: "C:/worlds/The Shattered Coast" }),
+    );
+    renderWithQuery(<WelcomePage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Create sample world/ }));
+
+    await waitFor(() => expect(commands.createSampleWorld).toHaveBeenCalledWith("C:/worlds"));
+  });
+
+  it("does nothing when the sample world folder picker is cancelled", async () => {
+    renderWithQuery(<WelcomePage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Create sample world/ }));
+
+    await waitFor(() => expect(dialogOpen).toHaveBeenCalled());
+    expect(commands.createSampleWorld).not.toHaveBeenCalled();
   });
 
   it("shows the error message when opening fails", async () => {

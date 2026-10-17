@@ -43,6 +43,15 @@ export function useCreateWorld() {
   });
 }
 
+/** Creates "The Shattered Coast" inside the chosen parent folder and opens it. */
+export function useCreateSampleWorld() {
+  const invalidate = useInvalidateWorlds();
+  return useMutation({
+    mutationFn: (parentDir: string) => unwrap(commands.createSampleWorld(parentDir)),
+    onSuccess: invalidate,
+  });
+}
+
 export function useOpenWorld() {
   const invalidate = useInvalidateWorlds();
   return useMutation({
