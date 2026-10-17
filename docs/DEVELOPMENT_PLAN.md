@@ -253,11 +253,11 @@ CREATE INDEX idx_events_start ON events(start_day);
 - [x] Empty states and onboarding hints for a brand-new world
 - [x] Optional sample world ("The Shattered Coast") with a few linked entities, a map and events
 - [x] Automatic daily backup of `world.db` on open (keep last 5)
-- [ ] Playwright end-to-end tests for: create world → create entity → write lore with a mention → search → place a pin → create an event
-- [ ] Release workflow: on tag `v*`, build `.msi`/`.exe` (Windows) and `.AppImage`/`.deb` (Linux), attach to a GitHub Release
-- [ ] Tauri updater configured against GitHub Releases (signing keys documented in README, not committed)
-- [ ] App icon and installer metadata
-- [ ] CHANGELOG.md
+- [x] Playwright end-to-end tests for: create world → create entity → write lore with a mention → search → place a pin → create an event _(Windows via WebView2 CDP; Linux e2e is manual for now)_
+- [x] Release workflow: on tag `v*`, build `.msi`/`.exe` (Windows) and `.AppImage`/`.deb` (Linux), attach to a GitHub Release _(untested until the first tag is pushed)_
+- [x] Tauri updater configured against GitHub Releases (signing keys documented in README, not committed)
+- [x] App icon and installer metadata
+- [x] CHANGELOG.md
 
 **Acceptance:** install v0.1.0 from the GitHub Release on a clean Windows machine and a clean Linux machine and complete the end-to-end flow manually.
 
