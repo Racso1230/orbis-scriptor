@@ -247,10 +247,10 @@ CREATE INDEX idx_events_start ON events(start_day);
 
 **Goal:** a stable, installable first release.
 
-- [ ] Settings screen: theme (light/dark/system), autosave delay, editor font size
-- [ ] Global error boundary and toast notifications for command errors
-- [ ] Keyboard shortcuts: `Ctrl+K` palette, `Ctrl+N` new entity, `Ctrl+W` close tab, `Ctrl+S` force save
-- [ ] Empty states and onboarding hints for a brand-new world
+- [x] Settings screen: theme (light/dark/system), autosave delay, editor font size
+- [x] Global error boundary and toast notifications for command errors
+- [x] Keyboard shortcuts: `Ctrl+K` palette, `Ctrl+N` new entity, `Ctrl+W` close tab, `Ctrl+S` force save
+- [x] Empty states and onboarding hints for a brand-new world
 - [x] Optional sample world ("The Shattered Coast") with a few linked entities, a map and events
 - [x] Automatic daily backup of `world.db` on open (keep last 5)
 - [ ] Playwright end-to-end tests for: create world → create entity → write lore with a mention → search → place a pin → create an event
