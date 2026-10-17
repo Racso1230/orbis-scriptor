@@ -13,7 +13,8 @@
     "format:check": "prettier --check .",
     "typecheck": "tsc -b",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "e2e": "npm run tauri build -- --debug --no-bundle && playwright test"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",

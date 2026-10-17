@@ -33,9 +33,9 @@ export default tseslint.config(
       "@typescript-eslint/no-explicit-any": "error",
     },
   },
-  // Node scripts (not bundled into the app).
+  // Node scripts and Playwright e2e tests (not bundled into the app).
   {
-    files: ["scripts/**/*.mjs"],
+    files: ["scripts/**/*.mjs", "e2e/**/*.ts", "playwright.config.ts"],
     languageOptions: { globals: globals.node },
   },
   // Must be last: turns off formatting rules that would fight Prettier.

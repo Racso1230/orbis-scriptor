@@ -17,6 +17,7 @@ use tauri_specta::{Builder, collect_commands};
 fn specta_builder() -> Builder<tauri::Wry> {
     Builder::<tauri::Wry>::new().commands(collect_commands![
         commands::app::app_info,
+        commands::app::e2e_dir,
         commands::settings::get_settings,
         commands::settings::update_settings,
         commands::world::create_world,

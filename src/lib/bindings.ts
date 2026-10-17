@@ -12,6 +12,15 @@ export const commands = {
 	 *  `tauri::AppHandle` is injected by Tauri; the frontend never passes it.
 	 */
 	appInfo: () => typedError<AppInfo, AppError>(__TAURI_INVOKE("app_info")),
+	/**
+	 *  End-to-end test hook: the folder named by `ORBIS_E2E_DIR`, if set.
+	 * 
+	 *  The Playwright tests cannot click native file dialogs, so the frontend's
+	 *  pick helpers ask this command first and skip the dialog when it answers.
+	 *  Only **debug builds** honour the variable; in a release build this always
+	 *  returns `None`, so the hook cannot be used on an installed app.
+	 */
+	e2eDir: () => __TAURI_INVOKE<string | null>("e2e_dir"),
 	/**  The saved app settings (defaults if none are saved yet). */
 	getSettings: () => typedError<AppSettings, AppError>(__TAURI_INVOKE("get_settings")),
 	/**  Saves the settings (numbers are clamped) and returns what was stored. */

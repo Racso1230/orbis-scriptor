@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { e2eDir } from "@/lib/e2e";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   commands,
@@ -32,6 +33,9 @@ export function useEntityMapAppearances(entityId: string) {
 
 /** Native file picker limited to common raster formats. `null` if cancelled. */
 export async function pickImageFile(): Promise<string | null> {
+  // Test hook: skip the native dialog (debug builds with ORBIS_E2E_DIR only).
+  const hooked = await e2eDir();
+  if (hooked) return `${hooked}/map.png`;
   const result = await open({
     multiple: false,
     directory: false,

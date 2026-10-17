@@ -17,3 +17,7 @@ src-tauri/gen/schemas
 !.vscode/extensions.json
 .idea
 .DS_Store
+
+# Playwright
+test-results
+playwright-report
