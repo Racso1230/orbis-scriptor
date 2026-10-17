@@ -33,6 +33,11 @@ export default tseslint.config(
       "@typescript-eslint/no-explicit-any": "error",
     },
   },
+  // Node scripts (not bundled into the app).
+  {
+    files: ["scripts/**/*.mjs"],
+    languageOptions: { globals: globals.node },
+  },
   // Must be last: turns off formatting rules that would fight Prettier.
   prettier,
 );

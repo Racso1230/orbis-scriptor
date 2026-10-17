@@ -18,8 +18,8 @@ for (let y = 0; y < H; y++) {
     const i = base + 1 + x * 3;
     const grid = x % 250 === 0 || y % 250 === 0;
     const noise = ((x * 73856093) ^ (y * 19349663)) & 15;
-    raw[i] = grid ? 40 : 90 + ((x * 120) / W) + noise;
-    raw[i + 1] = grid ? 40 : 140 + ((y * 80) / H) + noise;
+    raw[i] = grid ? 40 : 90 + (x * 120) / W + noise;
+    raw[i + 1] = grid ? 40 : 140 + (y * 80) / H + noise;
     raw[i + 2] = grid ? 40 : 100 + noise;
   }
 }
