@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { FolderOpen, FolderPlus, Sparkles, Trash2 } from "lucide-react";
+import { FolderOpen, FolderPlus, Settings, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -100,6 +100,13 @@ export function WelcomePage() {
           </Button>
           <Button variant="outline" onClick={handleSample} disabled={busy}>
             <Sparkles /> Create sample world
+          </Button>
+          <Button
+            variant="ghost"
+            className="ml-auto"
+            onClick={() => void navigate({ to: "/settings" })}
+          >
+            <Settings /> Settings
           </Button>
         </div>
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { CalendarDays, Database, FlaskConical, Plus, X } from "lucide-react";
+import { CalendarDays, Database, FlaskConical, Plus, Settings, X } from "lucide-react";
 import {
   Command,
   CommandDialog,
@@ -76,6 +76,15 @@ export function CommandPalette() {
       run: () => {
         changeOpen(false);
         openTimeline();
+      },
+    },
+    {
+      id: "settings",
+      label: "Settings",
+      icon: <Settings />,
+      run: () => {
+        changeOpen(false);
+        void navigate({ to: "/settings" });
       },
     },
     {

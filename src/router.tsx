@@ -9,6 +9,7 @@ import { AppShell } from "@/components/app-shell";
 import { EntityPage } from "@/features/entities/entity-page";
 import { currentWorldQuery } from "@/features/worlds/queries";
 import { TimelinePage } from "@/features/timeline/timeline-view";
+import { SettingsPage } from "@/features/settings/settings-page";
 import { WelcomePage } from "@/features/worlds/welcome-page";
 import { WorldEmptyState, WorldLayout } from "@/features/worlds/world-layout";
 import { queryClient } from "@/lib/query-client";
@@ -58,8 +59,16 @@ const timelineRoute = createRoute({
   component: TimelinePage,
 });
 
+// `/settings` - app settings; reachable from the welcome page and from inside a world.
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings",
+  component: SettingsPage,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  settingsRoute,
   worldRoute.addChildren([worldIndexRoute, entityRoute, timelineRoute]),
 ]);
 

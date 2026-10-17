@@ -1,3 +1,4 @@
+import { useNavigate } from "@tanstack/react-router";
 import { Database, FlaskConical, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +13,7 @@ import { SEED_COUNT, SEED_EVENT_COUNT, useIndexMaintenance } from "./use-index-m
 
 /** Gear menu in the header with recovery and dev tools. */
 export function DebugMenu() {
+  const navigate = useNavigate();
   const { rebuildIndex, seedEntities, seedEvents, status, busy } = useIndexMaintenance();
 
   return (
@@ -33,6 +35,10 @@ export function DebugMenu() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => void navigate({ to: "/settings" })}>
+            <Settings /> Settings
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuLabel>Maintenance</DropdownMenuLabel>
           <DropdownMenuItem disabled={busy} onSelect={() => void rebuildIndex()}>
             <Database /> Rebuild search index
