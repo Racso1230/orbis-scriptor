@@ -26,6 +26,7 @@ export function useSearch(text: string, limit = 20) {
 /** Recovery tool: rebuilds the whole search index from the data. */
 export function useRebuildSearchIndex() {
   return useMutation({
+    meta: { inlineError: true },
     mutationFn: () => unwrap(commands.rebuildSearchIndex()),
   });
 }
@@ -34,6 +35,7 @@ export function useRebuildSearchIndex() {
 export function useSeedEntities() {
   const queryClient = useQueryClient();
   return useMutation({
+    meta: { inlineError: true },
     mutationFn: (count: number) => unwrap(commands.devSeedEntities(count)),
     onSuccess: () =>
       Promise.all([

@@ -37,6 +37,7 @@ function useInvalidateWorlds() {
 export function useCreateWorld() {
   const invalidate = useInvalidateWorlds();
   return useMutation({
+    meta: { inlineError: true },
     mutationFn: ({ path, name }: { path: string; name: string }) =>
       unwrap(commands.createWorld(path, name)),
     onSuccess: invalidate,
@@ -47,6 +48,7 @@ export function useCreateWorld() {
 export function useCreateSampleWorld() {
   const invalidate = useInvalidateWorlds();
   return useMutation({
+    meta: { inlineError: true },
     mutationFn: (parentDir: string) => unwrap(commands.createSampleWorld(parentDir)),
     onSuccess: invalidate,
   });
@@ -55,6 +57,7 @@ export function useCreateSampleWorld() {
 export function useOpenWorld() {
   const invalidate = useInvalidateWorlds();
   return useMutation({
+    meta: { inlineError: true },
     mutationFn: (path: string) => unwrap(commands.openWorld(path)),
     onSuccess: invalidate,
   });

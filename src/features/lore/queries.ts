@@ -32,6 +32,7 @@ export function useDocument(entityId: string) {
 export function useSaveDocument() {
   const queryClient = useQueryClient();
   return useMutation({
+    meta: { inlineError: true },
     mutationFn: ({
       entityId,
       content,

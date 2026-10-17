@@ -53,6 +53,7 @@ export function useCreateEntity() {
 export function useUpdateEntity() {
   const queryClient = useQueryClient();
   return useMutation({
+    meta: { inlineError: true },
     mutationFn: ({ id, patch }: { id: string; patch: EntityPatch }) =>
       unwrap(commands.updateEntity(id, patch)),
     onSuccess: (entity: Entity) => {

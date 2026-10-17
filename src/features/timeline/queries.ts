@@ -75,6 +75,7 @@ function invalidateEventData(queryClient: QueryClient) {
 export function useCreateEvent() {
   const queryClient = useQueryClient();
   return useMutation({
+    meta: { inlineError: true },
     mutationFn: ({
       name,
       startDay,
@@ -91,6 +92,7 @@ export function useCreateEvent() {
 export function useUpdateEventDates() {
   const queryClient = useQueryClient();
   return useMutation({
+    meta: { inlineError: true },
     mutationFn: ({
       entityId,
       startDay,
@@ -119,6 +121,7 @@ export function useInvolved(eventId: string) {
 export function useAddInvolved(eventId: string) {
   const queryClient = useQueryClient();
   return useMutation({
+    meta: { inlineError: true },
     mutationFn: (entityId: string) => unwrap(commands.addInvolved(eventId, entityId)),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: eventKeys.all }),
   });
@@ -127,6 +130,7 @@ export function useAddInvolved(eventId: string) {
 export function useRemoveInvolved(eventId: string) {
   const queryClient = useQueryClient();
   return useMutation({
+    meta: { inlineError: true },
     mutationFn: (entityId: string) => unwrap(commands.removeInvolved(eventId, entityId)),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: eventKeys.all }),
   });
@@ -144,6 +148,7 @@ export function useEventsForEntity(entityId: string) {
 export function useSeedEvents() {
   const queryClient = useQueryClient();
   return useMutation({
+    meta: { inlineError: true },
     mutationFn: (count: number) => unwrap(commands.devSeedEvents(count)),
     onSuccess: () => invalidateEventData(queryClient),
   });

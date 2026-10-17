@@ -45,6 +45,7 @@ export async function pickImageFile(): Promise<string | null> {
 export function useSetMapBackground(mapEntityId: string) {
   const queryClient = useQueryClient();
   return useMutation({
+    meta: { inlineError: true },
     mutationFn: async (path: string) => {
       const asset = await unwrap(commands.importAsset(path));
       return unwrap(commands.setMapBackground(mapEntityId, asset.id));
@@ -56,6 +57,7 @@ export function useSetMapBackground(mapEntityId: string) {
 export function useCreateMapObject(mapEntityId: string) {
   const queryClient = useQueryClient();
   return useMutation({
+    meta: { inlineError: true },
     mutationFn: (input: NewMapObject) => unwrap(commands.createMapObject(input)),
     onSuccess: () =>
       Promise.all([
@@ -73,6 +75,7 @@ export function useUpdateMapObject(mapEntityId: string) {
   const queryClient = useQueryClient();
   const key = mapKeys.detail(mapEntityId);
   return useMutation({
+    meta: { inlineError: true },
     mutationFn: ({ id, patch }: { id: string; patch: MapObjectPatch }) =>
       unwrap(commands.updateMapObject(id, patch)),
     onMutate: async ({ id, patch }) => {
@@ -102,6 +105,7 @@ export function useDeleteMapObject(mapEntityId: string) {
   const queryClient = useQueryClient();
   const key = mapKeys.detail(mapEntityId);
   return useMutation({
+    meta: { inlineError: true },
     mutationFn: (id: string) => unwrap(commands.deleteMapObject(id)),
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: key });
