@@ -34,7 +34,7 @@ export function assignLanes(items: readonly LaneItem[], gap = 6): LaneAssignment
   });
 }
 
-export const POINT_RADIUS = 6;
+export const POINT_RADIUS = 8;
 /** Rough width of one label character at the 12px label size. */
 export const CHAR_WIDTH = 6.6;
 const LABEL_GAP = 6;

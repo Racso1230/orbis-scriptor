@@ -4,6 +4,7 @@ import {
   MIN_DAYS_PER_PIXEL,
   dayToX,
   fitRange,
+  focusViewport,
   panBy,
   queryWindow,
   visibleRange,
@@ -86,5 +87,20 @@ describe("queryWindow", () => {
 
   it("changes after a large pan", () => {
     expect(queryWindow(1000, 2000)).not.toEqual(queryWindow(9000, 10000));
+  });
+});
+
+describe("focusViewport", () => {
+  it("centres a point event and shows about a month around it", () => {
+    const f = focusViewport(100, 100, 1000);
+    expect(f.centerDay).toBe(100.5);
+    expect(visibleRange(f, 1000).to - visibleRange(f, 1000).from).toBeGreaterThan(30);
+  });
+
+  it("fits a long range inside the screen", () => {
+    const f = focusViewport(0, 3599, 1000);
+    const r = visibleRange(f, 1000);
+    expect(r.from).toBeLessThan(0);
+    expect(r.to).toBeGreaterThan(3600);
   });
 });

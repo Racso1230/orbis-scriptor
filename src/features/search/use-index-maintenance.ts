@@ -1,7 +1,9 @@
 import { useState } from "react";
+import { useSeedEvents } from "@/features/timeline/queries";
 import { useRebuildSearchIndex, useSeedEntities } from "./queries";
 
 export const SEED_COUNT = 1000;
+export const SEED_EVENT_COUNT = 200;
 
 export type MaintenanceStatus = { kind: "success" | "error"; message: string } | null;
 
@@ -13,6 +15,7 @@ function errorText(e: unknown): string {
 export function useIndexMaintenance() {
   const rebuild = useRebuildSearchIndex();
   const seed = useSeedEntities();
+  const seedEventsMutation = useSeedEvents();
   const [status, setStatus] = useState<MaintenanceStatus>(null);
 
   async function rebuildIndex() {
@@ -35,10 +38,21 @@ export function useIndexMaintenance() {
     }
   }
 
+  async function seedEvents() {
+    setStatus(null);
+    try {
+      const created = await seedEventsMutation.mutateAsync(SEED_EVENT_COUNT);
+      setStatus({ kind: "success", message: `Created ${created} test events.` });
+    } catch (e) {
+      setStatus({ kind: "error", message: `Seeding failed: ${errorText(e)}` });
+    }
+  }
+
   return {
     rebuildIndex,
     seedEntities,
+    seedEvents,
     status,
-    busy: rebuild.isPending || seed.isPending,
+    busy: rebuild.isPending || seed.isPending || seedEventsMutation.isPending,
   };
 }

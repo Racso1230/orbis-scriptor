@@ -43,6 +43,8 @@ export function useCreateEntity() {
       return Promise.all([
         queryClient.invalidateQueries({ queryKey: entityKeys.list }),
         queryClient.invalidateQueries({ queryKey: searchKeys.all }),
+        // A new `event` entity appears on the timeline (at day 0).
+        queryClient.invalidateQueries({ queryKey: ["events"] }),
       ]);
     },
   });
@@ -60,6 +62,8 @@ export function useUpdateEntity() {
         queryClient.invalidateQueries({ queryKey: searchKeys.all }),
         // Pins show the linked entity's name and type.
         queryClient.invalidateQueries({ queryKey: ["maps"] }),
+        // Timeline events show the entity name and vanish with the entity.
+        queryClient.invalidateQueries({ queryKey: ["events"] }),
       ]);
     },
   });
@@ -76,6 +80,8 @@ export function useDeleteEntity() {
         queryClient.invalidateQueries({ queryKey: searchKeys.all }),
         // Pins on maps show the linked entity's name and type.
         queryClient.invalidateQueries({ queryKey: ["maps"] }),
+        // Timeline events show the entity name and vanish with the entity.
+        queryClient.invalidateQueries({ queryKey: ["events"] }),
       ]);
     },
   });

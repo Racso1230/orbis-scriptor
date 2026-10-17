@@ -89,3 +89,15 @@ export function queryWindow(from: number, to: number): { from: number; to: numbe
     to: Math.ceil((to + cell) / cell) * cell,
   };
 }
+
+/**
+ * Viewport that frames one event for "Show on timeline": the event takes up
+ * about 60% of the width, but a point event still shows a month of context.
+ */
+export function focusViewport(startDay: number, endDay: number, width: number): TimelineViewport {
+  const span = Math.max(endDay + 1 - startDay, 30);
+  return {
+    centerDay: (startDay + endDay + 1) / 2,
+    daysPerPixel: clampScale(span / Math.max(1, width * 0.6)),
+  };
+}
