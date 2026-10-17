@@ -104,8 +104,47 @@ pub fn run() {
             builder.mount_events(app);
             Ok(())
         })
-        .run(tauri::generate_context!())
+        .run(app_context())
         .expect("error while running tauri application");
+}
+
+/// The Tauri context (config from `tauri.conf.json` plus embedded assets).
+///
+/// `mut` lets us adjust the config before the window is created. In debug
+/// builds started by the end-to-end tests we turn on WebView2's DevTools port
+/// here, because some WebView2 versions ignore the
+/// `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` environment variable.
+fn app_context() -> tauri::Context<tauri::Wry> {
+    #[allow(unused_mut)] // only mutated in debug builds
+    let mut context = tauri::generate_context!();
+
+    #[cfg(debug_assertions)]
+    if let Some(port) = e2e_cdp_port() {
+        // `iter_mut` hands out mutable references so we can edit each window
+        // config in place. Setting browser args replaces Tauri's defaults, so
+        // the default `--disable-features` flag is repeated here.
+        for window in context.config_mut().app.windows.iter_mut() {
+            window.additional_browser_args = Some(format!(
+                "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection \
+                 --remote-debugging-port={port}"
+            ));
+        }
+    }
+
+    context
+}
+
+/// The DevTools port for an end-to-end run, or `None` for normal use.
+/// Only active when `ORBIS_E2E_DIR` is set (see `commands::app::e2e_dir`).
+#[cfg(debug_assertions)]
+fn e2e_cdp_port() -> Option<u16> {
+    std::env::var("ORBIS_E2E_DIR")
+        .ok()
+        .filter(|d| !d.trim().is_empty())?;
+    // `.ok()` turns the `Result` into an `Option`, and `?` returns `None`
+    // early if the variable is missing or not a valid port number.
+    let port = std::env::var("E2E_CDP_PORT").unwrap_or_else(|_| "9222".into());
+    port.trim().parse().ok()
 }
 
 #[cfg(test)]

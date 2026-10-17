@@ -148,6 +148,10 @@ export async function startApp(): Promise<RunningApp> {
       ORBIS_E2E_DIR: dir,
       // A clean WebView2 profile, so no localStorage (tabs, theme) leaks between runs.
       WEBVIEW2_USER_DATA_FOLDER: webviewData,
+      // The debug app reads this and enables WebView2's DevTools port itself
+      // (see app_context in src-tauri/src/lib.rs); the env var below is kept
+      // as a fallback for WebView2 versions that honour it.
+      E2E_CDP_PORT: String(PORT),
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${PORT}`,
     },
   });
