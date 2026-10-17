@@ -151,7 +151,7 @@ export function EntitySidebar() {
         </div>
         {entities.data?.length === 0 && (
           <p className="px-2 py-4 text-sm text-muted-foreground">
-            No entities yet. Use the + next to a type to add one.
+            No entities yet. Use the + next to a type, or press Ctrl+N.
           </p>
         )}
       </div>

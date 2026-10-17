@@ -1,5 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { flushAll } from "./save-registry";
 import { useAutosave } from "./use-autosave";
 
 describe("useAutosave", () => {
@@ -45,5 +46,43 @@ describe("useAutosave", () => {
     rerender({ v: "b" });
     unmount();
     expect(save).toHaveBeenCalledWith("b");
+  });
+});
+
+describe("useAutosave flush (Ctrl+S)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("saves immediately through the registry and cancels the pending timer", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = renderHook(({ v }) => useAutosave(v, save, 5000), {
+      initialProps: { v: "a" },
+    });
+    expect(await flushAll()).toBe("clean");
+
+    rerender({ v: "b" });
+    let result: string | undefined;
+    await act(async () => {
+      result = await flushAll();
+    });
+    expect(result).toBe("saved");
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save).toHaveBeenCalledWith("b");
+
+    await act(() => vi.advanceTimersByTimeAsync(6000));
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports an error result when the save fails", async () => {
+    const save = vi.fn().mockRejectedValue(new Error("nope"));
+    const { rerender } = renderHook(({ v }) => useAutosave(v, save, 5000), {
+      initialProps: { v: "a" },
+    });
+    rerender({ v: "b" });
+    let result: string | undefined;
+    await act(async () => {
+      result = await flushAll();
+    });
+    expect(result).toBe("error");
   });
 });

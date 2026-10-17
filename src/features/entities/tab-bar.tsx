@@ -2,9 +2,10 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import { X } from "lucide-react";
 import { useCurrentWorld } from "@/features/worlds/queries";
 import { cn } from "@/lib/utils";
-import { useTabsStore, useWorldTabs } from "@/stores/tabs-store";
+import { useWorldTabs } from "@/stores/tabs-store";
 import { EntityIcon } from "./entity-icon";
 import { useEntities, useEntityTypes } from "./queries";
+import { useCloseTab } from "./use-close-tab";
 
 /** Open entity tabs for the current world. The active tab follows the route. */
 export function TabBar() {
@@ -12,21 +13,14 @@ export function TabBar() {
   const { id: activeId } = useParams({ strict: false });
   const world = useCurrentWorld();
   const tabs = useWorldTabs(world.data?.path);
-  const closeTab = useTabsStore((s) => s.closeTab);
+  const closeTab = useCloseTab();
   const entities = useEntities();
   const types = useEntityTypes();
 
   if (tabs.length === 0) return null;
 
-  function go(id: string | null) {
-    if (id) void navigate({ to: "/world/entity/$id", params: { id } });
-    else void navigate({ to: "/world" });
-  }
-
-  function close(id: string) {
-    if (!world.data) return;
-    const next = closeTab(world.data.path, id);
-    if (id === activeId) go(next);
+  function go(id: string) {
+    void navigate({ to: "/world/entity/$id", params: { id } });
   }
 
   return (
@@ -55,7 +49,7 @@ export function TabBar() {
             </button>
             <button
               type="button"
-              onClick={() => close(id)}
+              onClick={() => closeTab(id)}
               aria-label={`Close ${entity?.name ?? "tab"}`}
               className="rounded-sm p-0.5 opacity-0 group-hover:opacity-100 hover:bg-accent focus:opacity-100"
             >
