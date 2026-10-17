@@ -5,7 +5,7 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::error::{AppError, AppResult};
 use crate::models::world::{RecentWorld, WorldSummary};
-use crate::services::{backups, recent_worlds, world};
+use crate::services::{backups, recent_worlds, sample_world, world};
 use crate::state::{AppState, WorldHandle};
 
 /// Where the recent-worlds file lives: the per-user app config directory
@@ -85,6 +85,19 @@ pub fn create_world(
     name: String,
 ) -> AppResult<WorldSummary> {
     let handle = world::create_world(Path::new(&path), &name)?;
+    install(&app, &state, handle)
+}
+
+/// Creates the sample world "The Shattered Coast" in a new folder inside
+/// `parent_dir`, fills it with linked entities, a map and events, and opens it.
+#[tauri::command]
+#[specta::specta]
+pub fn create_sample_world(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    parent_dir: String,
+) -> AppResult<WorldSummary> {
+    let handle = sample_world::create(Path::new(&parent_dir))?;
     install(&app, &state, handle)
 }
 

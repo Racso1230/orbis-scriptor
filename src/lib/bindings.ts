@@ -18,6 +18,11 @@ export const commands = {
 	updateSettings: (settings: AppSettings) => typedError<AppSettings, AppError>(__TAURI_INVOKE("update_settings", { settings })),
 	/**  Creates a new world folder and opens it. */
 	createWorld: (path: string, name: string) => typedError<WorldSummary, AppError>(__TAURI_INVOKE("create_world", { path, name })),
+	/**
+	 *  Creates the sample world "The Shattered Coast" in a new folder inside
+	 *  `parent_dir`, fills it with linked entities, a map and events, and opens it.
+	 */
+	createSampleWorld: (parentDir: string) => typedError<WorldSummary, AppError>(__TAURI_INVOKE("create_sample_world", { parentDir })),
 	/**  Opens an existing world folder (running migrations if needed). */
 	openWorld: (path: string) => typedError<WorldSummary, AppError>(__TAURI_INVOKE("open_world", { path })),
 	/**  Closes the open world, if any. Dropping the handle closes the database. */

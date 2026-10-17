@@ -20,6 +20,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
         commands::settings::get_settings,
         commands::settings::update_settings,
         commands::world::create_world,
+        commands::world::create_sample_world,
         commands::world::open_world,
         commands::world::close_world,
         commands::world::current_world,
