@@ -60,6 +60,18 @@
       "appimage": {
         "bundleMediaFramework": false
       }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDBDQzU3MUIxMDA4NzBGREEKUldUYUQ0Y0FzWEhGREdzc3R1bmpHNmp5cE8zSDNIL2tMeGtGRkdFUUhwakI5eklPdkYzRjF2dEoK",
+      "endpoints": [
+        "https://github.com/Racso1230/orbis-scriptor/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

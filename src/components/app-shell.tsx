@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { DebugMenu } from "@/features/search/debug-menu";
+import { useStartupUpdateCheck } from "@/features/updates/use-startup-update-check";
 import { useCloseWorld, useCurrentWorld } from "@/features/worlds/queries";
 
 /** Top bar plus the routed page below it. */
@@ -10,6 +11,7 @@ export function AppShell() {
   const navigate = useNavigate();
   const world = useCurrentWorld();
   const closeWorld = useCloseWorld();
+  useStartupUpdateCheck();
 
   async function handleClose() {
     await closeWorld.mutateAsync();

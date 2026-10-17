@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { CalendarDays, Database, FlaskConical, Plus, Settings, X } from "lucide-react";
+import { CalendarDays, Database, FlaskConical, Plus, RefreshCw, Settings, X } from "lucide-react";
 import {
   Command,
   CommandDialog,
@@ -13,6 +13,7 @@ import {
 import { EntityIcon } from "@/features/entities/entity-icon";
 import { useCreateEntity, useEntityTypes } from "@/features/entities/queries";
 import { useOpenEntity } from "@/features/entities/use-open-entity";
+import { runUpdateCheck } from "@/features/updates/check-for-updates";
 import { useOpenTimeline } from "@/features/timeline/use-open-timeline";
 import { useCloseWorld } from "@/features/worlds/queries";
 import { HighlightedSnippet } from "./highlighted-snippet";
@@ -85,6 +86,15 @@ export function CommandPalette() {
       run: () => {
         changeOpen(false);
         void navigate({ to: "/settings" });
+      },
+    },
+    {
+      id: "check-updates",
+      label: "Check for updates",
+      icon: <RefreshCw />,
+      run: () => {
+        changeOpen(false);
+        void runUpdateCheck({ manual: true });
       },
     },
     {

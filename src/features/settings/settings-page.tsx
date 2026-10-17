@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useRouter } from "@tanstack/react-router";
-import { ArrowLeft, Moon, Sun, SunMoon } from "lucide-react";
+import { ArrowLeft, Moon, RefreshCw, Sun, SunMoon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
+import { runUpdateCheck } from "@/features/updates/check-for-updates";
 import { SHORTCUTS } from "@/features/shortcuts/matcher";
 import { useUiStore, type Theme } from "@/stores/ui-store";
 import { useSettingsValue, useUpdateSettings, type Settings } from "./queries";
@@ -47,6 +48,13 @@ export function SettingsPage() {
   function chooseTheme(next: Theme) {
     setTheme(next); // instant, and keeps the localStorage cache current
     save({ theme: next });
+  }
+
+  const [checking, setChecking] = useState(false);
+  async function checkNow() {
+    setChecking(true);
+    await runUpdateCheck({ manual: true });
+    setChecking(false);
   }
 
   const mod = modifierLabel();
@@ -133,6 +141,18 @@ export function SettingsPage() {
           >
             The Shattered Coast lay silent beneath a pale and restless sky.
           </p>
+        </section>
+
+        <section className="flex flex-col gap-3">
+          <h2 className="text-sm font-medium">Updates</h2>
+          <div className="flex items-center gap-3">
+            <Button variant="outline" onClick={() => void checkNow()} disabled={checking}>
+              <RefreshCw /> {checking ? "Checking…" : "Check for updates"}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Checks GitHub Releases. Orbis Scriptor also checks quietly when it starts.
+            </p>
+          </div>
         </section>
 
         <section className="flex flex-col gap-3">

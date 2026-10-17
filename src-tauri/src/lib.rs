@@ -92,6 +92,10 @@ pub fn run() {
     tauri::Builder::default()
         // Native open/save dialogs (folder picker on the welcome screen).
         .plugin(tauri_plugin_dialog::init())
+        // In-app updates from GitHub Releases (see README, "Releasing").
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        // Needed to relaunch after an update has been installed.
+        .plugin(tauri_plugin_process::init())
         .manage(state::AppState::default())
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {

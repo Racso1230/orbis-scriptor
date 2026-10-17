@@ -50,6 +50,60 @@ npm run tauri build
 
 Installers are written to `src-tauri/target/release/bundle/`.
 
+## Releasing
+
+Releases are built by [`.github/workflows/release.yml`](.github/workflows/release.yml) when a tag named `v*` is pushed. It builds the Windows installers (`.msi` and NSIS `.exe`) and the Linux packages (`.deb` and `.AppImage`), signs the updater artifacts, and creates a **draft** GitHub Release with everything attached plus `latest.json` (the file the in-app updater reads). Review the draft, then publish it.
+
+### Steps
+
+1. Pick the new version `X.Y.Z` and set it in all three places: `package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`. Then run `cargo check` in `src-tauri` and `npm install --package-lock-only` so the lock files follow.
+2. Move the `Unreleased` entries in `CHANGELOG.md` under a new `[X.Y.Z] - date` heading.
+3. Commit and push to `main`, and wait for CI to pass.
+4. Tag and push the tag:
+   ```sh
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+5. When the workflow finishes, open the draft release on GitHub, check the assets, and publish it.
+
+### Signing key and GitHub secrets
+
+Updates are verified with a minisign key pair. The **public** key is committed in `src-tauri/tauri.conf.json` (`plugins.updater.pubkey`). The **private** key is never committed:
+
+- It lives on the maintainer's machine at `C:\Users\oscar\.tauri\orbis-scriptor.key` (public half: `orbis-scriptor.key.pub`). It was generated with `npx tauri signer generate --ci -p "" -w <path>`, which means it has an **empty password**.
+- **Back it up** somewhere safe (a password manager is ideal). If it is lost, installed copies of the app can never verify another update, and users would have to reinstall by hand. Do not commit it or paste it anywhere public.
+- Add two repository secrets (Settings > Secrets and variables > Actions):
+  - `TAURI_SIGNING_PRIVATE_KEY`: the full contents of the `.key` file.
+  - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: the key's password. For the current key this is empty; create the secret with an empty value (or remove that line from the workflow).
+
+To build installers locally with updater signing (PowerShell):
+
+```powershell
+$env:TAURI_SIGNING_PRIVATE_KEY = Get-Content -Raw "$HOME\.tauri\orbis-scriptor.key"
+$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
+npm run tauri build
+```
+
+### The updater and a private repository
+
+The app checks `https://github.com/Racso1230/orbis-scriptor/releases/latest/download/latest.json`. GitHub only serves release downloads to anonymous clients when the repository is **public**. While this repository is private, the in-app update check will fail (quietly at startup, with a message when you click "Check for updates") and installers can only be downloaded by signed-in collaborators. To ship updates you must either make the repository public, or publish releases to a separate public repository and change the endpoint in `src-tauri/tauri.conf.json` (and the repository used by the release workflow).
+
+The update check only runs automatically in release builds, not in `tauri dev`. If it fails (for example, offline), the app carries on normally.
+
+## End-to-end tests
+
+The Playwright tests in `e2e/` drive the real desktop app on Windows. They launch the debug build with WebView2's remote debugging port enabled, then attach Playwright over the Chrome DevTools Protocol:
+
+```sh
+npm run e2e
+```
+
+`npm run e2e` first builds the debug app (`npm run tauri build -- --debug --no-bundle`), then runs `playwright test`. To skip the build while iterating on the tests, run `npx playwright test` (the debug executable must already exist at `src-tauri/target/debug/orbis-scriptor.exe`).
+
+Native dialogs (the folder and image pickers) cannot be driven by Playwright. In **debug builds only**, if the environment variable `ORBIS_E2E_DIR` is set, the app skips those dialogs and uses a folder and a map image inside that directory instead. Release builds ignore the variable completely. The test creates a fresh temporary directory for every run and sets the variable for you.
+
+Linux uses WebKitGTK, which has no CDP support, so Linux end-to-end testing is manual for now (a `tauri-driver` setup could replace this later). CI runs the e2e tests on Windows only, as a separate job.
+
 ## Project layout
 
 ```
