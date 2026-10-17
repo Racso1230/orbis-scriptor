@@ -76,3 +76,38 @@ jobs:
 
       - name: Build app (no installer)
         run: npm run tauri build -- --no-bundle
+
+  # Drives the real desktop app through WebView2 (Windows only; WebKitGTK on
+  # Linux has no DevTools protocol). A separate job so a flaky UI test never
+  # hides the result of the main checks, and vice versa.
+  e2e:
+    name: e2e (windows)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build the debug app and run Playwright
+        run: npm run e2e
+
+      - name: Upload Playwright results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: test-results
+          if-no-files-found: ignore
