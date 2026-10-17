@@ -25,6 +25,7 @@ pub struct Era {
     pub abbreviation: Option<String>,
     /// Day number on which the era starts; year 1 of the era is the calendar
     /// year containing this day.
+    #[specta(type = specta_typescript::Number)]
     pub start_day: i64,
 }
 
@@ -58,6 +59,7 @@ pub struct CalendarDate {
     pub era_name: String,
     /// Year within the era; 1 is the first year. Dates before the first era
     /// continue downwards: 0, -1, -2, ...
+    #[specta(type = specta_typescript::Number)]
     pub year: i64,
     /// 1-based.
     pub month: u32,
@@ -85,3 +87,13 @@ pub enum DateStyle {
     /// `15` (handy for tick labels)
     Day,
 }
+
+/// A day number or year in command arguments (an integer that fits a JS number).
+///
+/// specta refuses to export `i64` (JavaScript numbers lose precision above
+/// 2^53). Day numbers are limited to +/- `MAX_DAY` (10^12), far below that
+/// limit, so we tell specta to describe this type as a plain TypeScript
+/// `number`. `serde(transparent)` makes it travel as a bare number in JSON.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(transparent)]
+pub struct JsInt(#[specta(type = specta_typescript::Number)] pub i64);

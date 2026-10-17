@@ -3,8 +3,10 @@
 //! TypeScript signature is generated.
 
 pub mod app;
+pub mod calendars;
 pub mod documents;
 pub mod entities;
+pub mod events;
 pub mod links;
 pub mod maps;
 pub mod search;

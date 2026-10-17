@@ -11,8 +11,10 @@ pub struct EventSummary {
     pub entity_id: String,
     pub name: String,
     /// Day number from the world epoch; may be negative.
+    #[specta(type = specta_typescript::Number)]
     pub start_day: i64,
     /// `None` = a single-day event (drawn as a point).
+    #[specta(type = Option<specta_typescript::Number>)]
     pub end_day: Option<i64>,
     /// 1 (minor) to 5 (major).
     pub importance: i32,

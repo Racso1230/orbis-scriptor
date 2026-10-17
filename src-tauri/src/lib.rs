@@ -44,6 +44,21 @@ fn specta_builder() -> Builder<tauri::Wry> {
         commands::maps::delete_map_object,
         commands::maps::list_entity_map_appearances,
         commands::maps::dev_seed_map_pins,
+        commands::calendars::get_default_calendar,
+        commands::calendars::list_calendars,
+        commands::calendars::format_day,
+        commands::calendars::format_days,
+        commands::calendars::date_parts,
+        commands::calendars::day_from_parts,
+        commands::events::list_events,
+        commands::events::get_event,
+        commands::events::create_event,
+        commands::events::update_event_dates,
+        commands::events::list_involved,
+        commands::events::add_involved,
+        commands::events::remove_involved,
+        commands::events::list_events_for_entity,
+        commands::events::dev_seed_events,
     ])
 }
 

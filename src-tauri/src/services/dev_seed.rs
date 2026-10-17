@@ -11,6 +11,7 @@ use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::models::document::Document;
 use crate::models::entity::Entity;
+use crate::models::link::KIND_INVOLVED_IN;
 use crate::models::map::{MapGeometry, NewMapObject};
 use crate::services::maps;
 
@@ -161,6 +162,79 @@ pub fn seed_map_pins(conn: &Connection, map_entity_id: &str, count: u32) -> AppR
     Ok(count)
 }
 
+/// Event names are built from these two lists.
+const EVENT_KINDS: [&str; 10] = [
+    "Battle of",
+    "Siege of",
+    "Coronation at",
+    "Treaty of",
+    "Founding of",
+    "Fall of",
+    "Plague in",
+    "Festival at",
+    "Council of",
+    "Great Flood of",
+];
+const EVENT_PLACES: [&str; 8] = [
+    "Ashford",
+    "Stormwind",
+    "Dunmere",
+    "Greywatch",
+    "Highcrown",
+    "Ironvale",
+    "Ravenhold",
+    "Evenfall",
+];
+
+/// Events are spread over roughly +/- 1,500 years of the default calendar.
+const SEED_DAY_SPAN: usize = 540_000;
+
+/// Creates `count` events across a few thousand years: about a third are date
+/// ranges, the rest single days. Each is linked (`involved_in`) to up to three
+/// random characters. Returns the count.
+pub fn seed_events(conn: &Connection, count: u32) -> AppResult<u32> {
+    let calendar = crate::services::calendar::get_default(conn)?;
+    let characters = db::maps::entity_ids_of_type(conn, "character")?;
+    let mut rng = Lcg(Uuid::now_v7().as_u128() as u64);
+    let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    let tx = conn.unchecked_transaction()?;
+
+    for i in 0..count {
+        let entity = Entity {
+            id: Uuid::now_v7().to_string(),
+            entity_type: "event".into(),
+            name: format!(
+                "{} {} {}",
+                EVENT_KINDS[rng.next(EVENT_KINDS.len())],
+                EVENT_PLACES[rng.next(EVENT_PLACES.len())],
+                i
+            ),
+            summary: format!("An event about {}", rng.sentence(3)),
+            properties: json!({}),
+            created_at: timestamp.clone(),
+            updated_at: timestamp.clone(),
+        };
+        db::entities::insert(&tx, &entity)?;
+
+        // `usize` -> `i64` with `as` is fine here: the values are small.
+        let start = rng.next(SEED_DAY_SPAN * 2) as i64 - SEED_DAY_SPAN as i64;
+        let end = (rng.next(3) == 0).then(|| start + 1 + rng.next(5000) as i64);
+        let importance = 1 + rng.next(5) as i32;
+        db::events::insert(&tx, &entity.id, &calendar.id, start, end, importance)?;
+        db::search::replace(&tx, &entity.id, &entity.name, &entity.summary, "")?;
+
+        if !characters.is_empty() {
+            for _ in 0..rng.next(4) {
+                let who = &characters[rng.next(characters.len())];
+                db::links::insert_link(&tx, who, &entity.id, KIND_INVOLVED_IN)?;
+            }
+        }
+    }
+
+    tx.commit()?;
+    Ok(count)
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
@@ -203,5 +277,35 @@ mod tests {
         let data = maps::get_map(&c, std::path::Path::new("assets"), &map.id).unwrap();
         assert_eq!(data.objects.len(), 50);
         assert!(data.objects.iter().all(|o| o.entity_id.is_some()));
+    }
+
+    #[test]
+    fn seeds_events_linked_to_characters() {
+        let mut c = Connection::open_in_memory().unwrap();
+        c.pragma_update(None, "foreign_keys", "ON").unwrap();
+        MIGRATIONS.to_latest(&mut c).unwrap();
+        seed(&c, 50).unwrap();
+
+        assert_eq!(seed_events(&c, 100).unwrap(), 100);
+        let all = crate::services::events::list(&c, -1_000_000, 1_000_000).unwrap();
+        assert_eq!(all.len(), 100);
+        assert!(all.iter().any(|e| e.end_day.is_some()));
+        assert!(all.iter().any(|e| e.start_day < 0));
+        assert!(
+            all.iter()
+                .all(|e| e.end_day.is_none_or(|end| end > e.start_day))
+        );
+        let linked: i64 = c
+            .query_row(
+                "SELECT count(*) FROM links WHERE kind = 'involved_in'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(linked > 0);
+        assert!(
+            !search::search(&c, "battle", 5).unwrap().is_empty()
+                || !search::search(&c, "siege", 5).unwrap().is_empty()
+        );
     }
 }

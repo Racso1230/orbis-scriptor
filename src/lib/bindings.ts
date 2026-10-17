@@ -77,6 +77,38 @@ export const commands = {
 	listEntityMapAppearances: (entityId: string) => typedError<MapAppearance[], AppError>(__TAURI_INVOKE("list_entity_map_appearances", { entityId })),
 	/**  Development only: adds `count` random pins to a map for performance tests. */
 	devSeedMapPins: (mapEntityId: string, count: number) => typedError<number, AppError>(__TAURI_INVOKE("dev_seed_map_pins", { mapEntityId, count })),
+	/**  The world's default calendar. */
+	getDefaultCalendar: () => typedError<Calendar, AppError>(__TAURI_INVOKE("get_default_calendar")),
+	listCalendars: () => typedError<Calendar[], AppError>(__TAURI_INVOKE("list_calendars")),
+	/**  Formats one day number. `calendar_id` null = the default calendar. */
+	formatDay: (calendarId: string | null, day: JsInt, style: DateStyle) => typedError<string, AppError>(__TAURI_INVOKE("format_day", { calendarId, day, style })),
+	/**  Formats many day numbers in one call (for timeline tick labels). */
+	formatDays: (calendarId: string | null, days: JsInt[], style: DateStyle) => typedError<string[], AppError>(__TAURI_INVOKE("format_days", { calendarId, days, style })),
+	/**  Splits a day number into era / year / month / day (and weekday). */
+	dateParts: (calendarId: string | null, day: JsInt) => typedError<CalendarDate, AppError>(__TAURI_INVOKE("date_parts", { calendarId, day })),
+	/**  The inverse of `date_parts`: month and day are 1-based. */
+	dayFromParts: (calendarId: string | null, eraIndex: number, year: JsInt, month: number, day: number) => typedError<JsInt, AppError>(__TAURI_INVOKE("day_from_parts", { calendarId, eraIndex, year, month, day })),
+	/**  Events overlapping the closed day window `[from_day, to_day]`, oldest first. */
+	listEvents: (fromDay: JsInt, toDay: JsInt) => typedError<EventSummary[], AppError>(__TAURI_INVOKE("list_events", { fromDay, toDay })),
+	getEvent: (entityId: string) => typedError<EventSummary, AppError>(__TAURI_INVOKE("get_event", { entityId })),
+	/**  Creates the event entity and its dates in one transaction. */
+	createEvent: (name: string, startDay: JsInt, endDay: number | null) => typedError<EventSummary, AppError>(__TAURI_INVOKE("create_event", { name, startDay, endDay })),
+	/**
+	 *  Changes the dates (end must not be before start). `importance` (1-5) is
+	 *  left unchanged when null.
+	 */
+	updateEventDates: (entityId: string, startDay: JsInt, endDay: number | null, importance: number | null) => typedError<EventSummary, AppError>(__TAURI_INVOKE("update_event_dates", { entityId, startDay, endDay, importance })),
+	/**  Entities involved in the event (`involved_in` links). */
+	listInvolved: (eventId: string) => typedError<EntitySummary[], AppError>(__TAURI_INVOKE("list_involved", { eventId })),
+	addInvolved: (eventId: string, entityId: string) => typedError<null, AppError>(__TAURI_INVOKE("add_involved", { eventId, entityId })),
+	removeInvolved: (eventId: string, entityId: string) => typedError<null, AppError>(__TAURI_INVOKE("remove_involved", { eventId, entityId })),
+	/**  Events the entity is involved in, oldest first. */
+	listEventsForEntity: (entityId: string) => typedError<EventSummary[], AppError>(__TAURI_INVOKE("list_events_for_entity", { entityId })),
+	/**
+	 *  Development only: creates `count` events spread over a few thousand years,
+	 *  some of them ranges, linked to random characters. Refuses to run in release.
+	 */
+	devSeedEvents: (count: number) => typedError<number, AppError>(__TAURI_INVOKE("dev_seed_events", { count })),
 };
 
 /* Types */
@@ -128,6 +160,57 @@ export type Backlink = {
 	sourceName: string,
 	snippet: string,
 };
+
+/**  A calendar row. */
+export type Calendar = {
+	id: string,
+	name: string,
+	definition: CalendarDefinition,
+	isDefault: boolean,
+};
+
+/**  A day number broken into calendar parts. */
+export type CalendarDate = {
+	/**  Index into `definition.eras`. */
+	eraIndex: number,
+	eraName: string,
+	/**
+	 *  Year within the era; 1 is the first year. Dates before the first era
+	 *  continue downwards: 0, -1, -2, ...
+	 */
+	year: number,
+	/**  1-based. */
+	month: number,
+	monthName: string,
+	/**  1-based day of the month. */
+	day: number,
+	/**  Name of the weekday, or `None` when the calendar has no weekdays. */
+	weekday: string | null,
+};
+
+/**  Stored as JSON in `calendars.definition`. */
+export type CalendarDefinition = {
+	months: Month[],
+	/**  Names of the days of the week; may be empty (no weekdays). */
+	weekdays: string[],
+	/**  Sorted by `start_day`, at least one. */
+	eras: Era[],
+};
+
+/**  How [`format`](crate::services::calendar::format) writes a date. */
+export type DateStyle = 
+/**  `15 Month 3, 1203 AF` */
+"full" | 
+/**  `15/3/1203 AF` */
+"short" | 
+/**  `Month 3, 1203 AF` */
+"monthYear" | 
+/**  `1203 AF` */
+"year" | 
+/**  `Month 3` (handy for tick labels) */
+"month" | 
+/**  `15` (handy for tick labels) */
+"day";
 
 /**
  *  The rich-text lore of one entity. One document per entity, created on
@@ -190,6 +273,31 @@ export type EntityTypeDef = {
 	fields: FieldDef[],
 };
 
+/**  A named span of years, e.g. "Age of Founding" (AF). */
+export type Era = {
+	name: string,
+	/**  Short suffix used when formatting, e.g. "AF". Falls back to `name`. */
+	abbreviation: string | null,
+	/**
+	 *  Day number on which the era starts; year 1 of the era is the calendar
+	 *  year containing this day.
+	 */
+	startDay: number,
+};
+
+/**  An event as shown on the timeline: its entity name plus the dates. */
+export type EventSummary = {
+	entityId: string,
+	name: string,
+	/**  Day number from the world epoch; may be negative. */
+	startDay: number,
+	/**  `None` = a single-day event (drawn as a point). */
+	endDay: number | null,
+	/**  1 (minor) to 5 (major). */
+	importance: number,
+	calendarId: string,
+};
+
 export type FieldDef = {
 	/**  Key inside the entity's `properties` JSON object. */
 	key: string,
@@ -201,6 +309,16 @@ export type FieldDef = {
 
 /**  How a type-specific field is edited. */
 export type FieldKind = "text" | "number" | "select";
+
+/**
+ *  A day number or year in command arguments (an integer that fits a JS number).
+ * 
+ *  specta refuses to export `i64` (JavaScript numbers lose precision above
+ *  2^53). Day numbers are limited to +/- `MAX_DAY` (10^12), far below that
+ *  limit, so we tell specta to describe this type as a plain TypeScript
+ *  `number`. `serde(transparent)` makes it travel as a bare number in JSON.
+ */
+export type JsInt = number;
 
 /**  One place where an entity appears as a pin ("appears on maps"). */
 export type MapAppearance = {
@@ -276,6 +394,13 @@ export type MapObjectPatch = {
 	style: { [key in string]: unknown } | null,
 	entityId: string | null,
 	unlinkEntity?: boolean,
+};
+
+/**  One month of the year. */
+export type Month = {
+	name: string,
+	/**  Number of days in the month (must be at least 1). */
+	days: number,
 };
 
 /**  Input for `create_entity`. */
