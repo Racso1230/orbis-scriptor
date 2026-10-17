@@ -154,10 +154,10 @@ CREATE INDEX idx_links_target ON links(target_id);
 - [x] `search(query, limit)` returns entity id, type, name and a highlighted snippet, ranked with `bm25`
 - [x] Prefix matching so results appear while typing
 - [ ] Command palette on `Ctrl+K`: search results plus actions ("New character", "Close world"…)
-- [ ] `rebuild_search_index()` command for recovery, exposed in a settings/debug menu (backend done; settings/debug menu UI still to do)
+- [x] `rebuild_search_index()` command for recovery, exposed in a settings/debug menu (gear menu in the header + palette action)
 - [x] Tests: indexing on create/update/delete; prefix search; snippet highlighting; special characters don't break queries
 
-**Acceptance:** with 1,000 generated test entities (add a dev-only seed command), search results appear as you type with no visible lag.
+**Acceptance:** with 1,000 generated test entities (add a dev-only seed command), search results appear as you type with no visible lag. _(Frontend tests were written but not run locally: jsdom 30 needs Node >= 22.22. Verify in CI; manual lag check still pending.)_
 
 ---
 
