@@ -2,6 +2,7 @@ import { Outlet, useNavigate } from "@tanstack/react-router";
 import { X } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
+import { DebugMenu } from "@/features/search/debug-menu";
 import { useCloseWorld, useCurrentWorld } from "@/features/worlds/queries";
 
 /** Top bar plus the routed page below it. */
@@ -28,6 +29,7 @@ export function AppShell() {
           )}
         </div>
         <div className="flex items-center gap-1">
+          {world.data && <DebugMenu />}
           {world.data && (
             <Button variant="ghost" size="sm" onClick={handleClose} disabled={closeWorld.isPending}>
               <X /> Close world
