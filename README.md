@@ -75,6 +75,7 @@ Updates are verified with a minisign key pair. The **public** key is committed i
 - Add two repository secrets (Settings > Secrets and variables > Actions):
   - `TAURI_SIGNING_PRIVATE_KEY`: the full contents of the `.key` file.
   - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: the key's password. For the current key this is empty; create the secret with an empty value (or remove that line from the workflow).
+  - If `TAURI_SIGNING_PRIVATE_KEY` is not set, the workflow still builds installers but skips the updater artifacts and `latest.json` (via `src-tauri/tauri.unsigned.conf.json`), so those installers cannot auto-update.
 
 To build installers locally with updater signing (PowerShell):
 

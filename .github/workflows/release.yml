@@ -14,6 +14,10 @@ jobs:
   release:
     name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    env:
+      # Without the signing secret we still build installers, just without
+      # updater artifacts (see src-tauri/tauri.unsigned.conf.json).
+      HAS_SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -51,6 +55,10 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Warn when building unsigned
+        if: env.HAS_SIGNING_KEY != 'true'
+        run: echo "::warning::TAURI_SIGNING_PRIVATE_KEY is not set; building without updater artifacts."
+
       - name: Build and publish to a draft release
         uses: tauri-apps/tauri-action@v1
         env:
@@ -64,5 +72,6 @@ jobs:
           releaseBody: "See the [changelog](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md) for what changed."
           releaseDraft: true
           prerelease: false
-          # Uploads latest.json, which the in-app updater reads.
-          uploadUpdaterJson: true
+          # Uploads latest.json, which the in-app updater reads (signed builds only).
+          uploadUpdaterJson: ${{ env.HAS_SIGNING_KEY == 'true' }}
+          args: ${{ env.HAS_SIGNING_KEY != 'true' && '--config src-tauri/tauri.unsigned.conf.json' || '' }}
