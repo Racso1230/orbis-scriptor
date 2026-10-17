@@ -149,13 +149,13 @@ CREATE INDEX idx_links_target ON links(target_id);
 
 **Goal:** instant search across all names, summaries and lore.
 
-- [ ] Migration 005: FTS5 virtual table over entity name, summary and document plain text (use the `unicode61` tokenizer with `remove_diacritics`)
-- [ ] Keep the index in sync from the service layer within the same transaction as each write (or via triggers; document the choice)
-- [ ] `search(query, limit)` returns entity id, type, name and a highlighted snippet, ranked with `bm25`
-- [ ] Prefix matching so results appear while typing
+- [x] Migration 005: FTS5 virtual table over entity name, summary and document plain text (use the `unicode61` tokenizer with `remove_diacritics`)
+- [x] Keep the index in sync from the service layer within the same transaction as each write (or via triggers; document the choice) — **chosen: service layer, same transaction** (lore plain text arrives from the editor, triggers would be invisible)
+- [x] `search(query, limit)` returns entity id, type, name and a highlighted snippet, ranked with `bm25`
+- [x] Prefix matching so results appear while typing
 - [ ] Command palette on `Ctrl+K`: search results plus actions ("New character", "Close world"…)
-- [ ] `rebuild_search_index()` command for recovery, exposed in a settings/debug menu
-- [ ] Tests: indexing on create/update/delete; prefix search; snippet highlighting; special characters don't break queries
+- [ ] `rebuild_search_index()` command for recovery, exposed in a settings/debug menu (backend done; settings/debug menu UI still to do)
+- [x] Tests: indexing on create/update/delete; prefix search; snippet highlighting; special characters don't break queries
 
 **Acceptance:** with 1,000 generated test entities (add a dev-only seed command), search results appear as you type with no visible lag.
 
