@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type Document } from "@/lib/bindings";
+import { searchKeys } from "@/features/search/queries";
 import { unwrap } from "@/lib/unwrap";
 
 export const documentKeys = {
@@ -43,7 +44,11 @@ export function useSaveDocument() {
     onSuccess: (doc: Document) => {
       queryClient.setQueryData(documentKeys.detail(doc.entityId), doc);
       // Mentions may have changed, so every backlinks list is suspect.
-      return queryClient.invalidateQueries({ queryKey: backlinkKeys.all });
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: backlinkKeys.all }),
+        // Lore text is indexed, so cached search results may be stale too.
+        queryClient.invalidateQueries({ queryKey: searchKeys.all }),
+      ]);
     },
   });
 }

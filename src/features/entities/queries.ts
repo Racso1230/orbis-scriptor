@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type Entity, type EntityPatch, type NewEntity } from "@/lib/bindings";
+import { searchKeys } from "@/features/search/queries";
 import { unwrap } from "@/lib/unwrap";
 
 export const entityKeys = {
@@ -39,7 +40,10 @@ export function useCreateEntity() {
     mutationFn: (input: NewEntity) => unwrap(commands.createEntity(input)),
     onSuccess: (entity: Entity) => {
       queryClient.setQueryData(entityKeys.detail(entity.id), entity);
-      return queryClient.invalidateQueries({ queryKey: entityKeys.list });
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: entityKeys.list }),
+        queryClient.invalidateQueries({ queryKey: searchKeys.all }),
+      ]);
     },
   });
 }
@@ -51,7 +55,10 @@ export function useUpdateEntity() {
       unwrap(commands.updateEntity(id, patch)),
     onSuccess: (entity: Entity) => {
       queryClient.setQueryData(entityKeys.detail(entity.id), entity);
-      return queryClient.invalidateQueries({ queryKey: entityKeys.list });
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: entityKeys.list }),
+        queryClient.invalidateQueries({ queryKey: searchKeys.all }),
+      ]);
     },
   });
 }
@@ -62,7 +69,10 @@ export function useDeleteEntity() {
     mutationFn: (id: string) => unwrap(commands.deleteEntity(id)),
     onSuccess: (_result, id) => {
       queryClient.removeQueries({ queryKey: entityKeys.detail(id) });
-      return queryClient.invalidateQueries({ queryKey: entityKeys.list });
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: entityKeys.list }),
+        queryClient.invalidateQueries({ queryKey: searchKeys.all }),
+      ]);
     },
   });
 }
