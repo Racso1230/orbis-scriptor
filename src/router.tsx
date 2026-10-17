@@ -8,6 +8,7 @@ import {
 import { AppShell } from "@/components/app-shell";
 import { EntityPage } from "@/features/entities/entity-page";
 import { currentWorldQuery } from "@/features/worlds/queries";
+import { TimelinePage } from "@/features/timeline/timeline-view";
 import { WelcomePage } from "@/features/worlds/welcome-page";
 import { WorldEmptyState, WorldLayout } from "@/features/worlds/world-layout";
 import { queryClient } from "@/lib/query-client";
@@ -50,9 +51,16 @@ const entityRoute = createRoute({
   component: EntityPage,
 });
 
+// `/world/timeline` - the zoomable event timeline (not an entity, so no tab).
+const timelineRoute = createRoute({
+  getParentRoute: () => worldRoute,
+  path: "/timeline",
+  component: TimelinePage,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
-  worldRoute.addChildren([worldIndexRoute, entityRoute]),
+  worldRoute.addChildren([worldIndexRoute, entityRoute, timelineRoute]),
 ]);
 
 // Hash history keeps URLs working both in `tauri dev` and in the packaged app,

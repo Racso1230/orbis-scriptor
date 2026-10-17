@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { Database, FlaskConical, Plus, X } from "lucide-react";
+import { CalendarDays, Database, FlaskConical, Plus, X } from "lucide-react";
 import {
   Command,
   CommandDialog,
@@ -13,10 +13,11 @@ import {
 import { EntityIcon } from "@/features/entities/entity-icon";
 import { useCreateEntity, useEntityTypes } from "@/features/entities/queries";
 import { useOpenEntity } from "@/features/entities/use-open-entity";
+import { useOpenTimeline } from "@/features/timeline/use-open-timeline";
 import { useCloseWorld } from "@/features/worlds/queries";
 import { HighlightedSnippet } from "./highlighted-snippet";
 import { useSearch } from "./queries";
-import { SEED_COUNT, useIndexMaintenance } from "./use-index-maintenance";
+import { SEED_COUNT, SEED_EVENT_COUNT, useIndexMaintenance } from "./use-index-maintenance";
 
 /**
  * Ctrl+K / Cmd+K palette: server-side search results plus quick actions.
@@ -27,6 +28,7 @@ export function CommandPalette() {
   const [query, setQuery] = useState("");
   const navigate = useNavigate();
   const openEntity = useOpenEntity();
+  const openTimeline = useOpenTimeline();
   const types = useEntityTypes();
   const createEntity = useCreateEntity();
   const closeWorld = useCloseWorld();
@@ -68,6 +70,15 @@ export function CommandPalette() {
       },
     })),
     {
+      id: "open-timeline",
+      label: "Open timeline",
+      icon: <CalendarDays />,
+      run: () => {
+        changeOpen(false);
+        openTimeline();
+      },
+    },
+    {
       id: "close-world",
       label: "Close world",
       icon: <X />,
@@ -90,6 +101,12 @@ export function CommandPalette() {
             label: `Seed ${SEED_COUNT.toLocaleString("en-US")} test entities (dev)`,
             icon: <FlaskConical />,
             run: () => void maintenance.seedEntities(),
+          },
+          {
+            id: "seed-events",
+            label: `Seed ${SEED_EVENT_COUNT} test events (dev)`,
+            icon: <FlaskConical />,
+            run: () => void maintenance.seedEvents(),
           },
         ]
       : []),

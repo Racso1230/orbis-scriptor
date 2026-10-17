@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { useNavigate, useParams, useRouterState } from "@tanstack/react-router";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ChevronDown, ChevronRight, Plus, Search } from "lucide-react";
+import { CalendarDays, ChevronDown, ChevronRight, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCurrentWorld } from "@/features/worlds/queries";
@@ -22,6 +22,7 @@ export function EntitySidebar() {
   const entities = useEntities();
   const createEntity = useCreateEntity();
   const openTab = useTabsStore((s) => s.openTab);
+  const onTimeline = useRouterState({ select: (s) => s.location.pathname.endsWith("/timeline") });
 
   const [filter, setFilter] = useState("");
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
@@ -62,6 +63,18 @@ export function EntitySidebar() {
 
   return (
     <div className="flex h-full flex-col">
+      <div className="px-2 pt-2">
+        <Button
+          variant={onTimeline ? "secondary" : "ghost"}
+          size="sm"
+          className="w-full justify-start"
+          aria-current={onTimeline ? "page" : undefined}
+          onClick={() => void navigate({ to: "/world/timeline" })}
+        >
+          <CalendarDays /> Timeline
+        </Button>
+      </div>
+
       <div className="relative p-2">
         <Search className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
