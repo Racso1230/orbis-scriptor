@@ -43,6 +43,18 @@ export const commands = {
 	saveDocument: (entityId: string, content: string, plainText: string) => typedError<Document, AppError>(__TAURI_INVOKE("save_document", { entityId, content, plainText })),
 	/**  Entities whose lore mentions `entity_id`. */
 	getBacklinks: (entityId: string) => typedError<Backlink[], AppError>(__TAURI_INVOKE("get_backlinks", { entityId })),
+	/**
+	 *  Full-text search over entity names, summaries and lore (prefix matching,
+	 *  best match first). Snippets mark matches with U+0002 / U+0003.
+	 */
+	search: (query: string, limit: number) => typedError<SearchResult[], AppError>(__TAURI_INVOKE("search", { query, limit })),
+	/**  Recovery tool: throws the index away and rebuilds it from the data. */
+	rebuildSearchIndex: () => typedError<null, AppError>(__TAURI_INVOKE("rebuild_search_index")),
+	/**
+	 *  Development only: generates `count` mixed entities with lore. Always
+	 *  registered (so bindings are stable) but refuses to run in release builds.
+	 */
+	devSeedEntities: (count: number) => typedError<number, AppError>(__TAURI_INVOKE("dev_seed_entities", { count })),
 };
 
 /* Types */
@@ -160,6 +172,19 @@ export type RecentWorld = {
 	lastOpenedAt: string,
 	/**  False when the folder (or its `world.json`) no longer exists. */
 	available: boolean,
+};
+
+/**  One hit from the full-text search, best match first. */
+export type SearchResult = {
+	entityId: string,
+	entityType: string,
+	name: string,
+	/**
+	 *  A short excerpt of the best-matching text. Matched terms are wrapped
+	 *  in U+0002 (start) and U+0003 (end); an ellipsis (U+2026) marks
+	 *  trimmed text.
+	 */
+	snippet: string,
 };
 
 /**  What the frontend needs to know about the currently open world. */

@@ -32,6 +32,9 @@ fn specta_builder() -> Builder<tauri::Wry> {
         commands::documents::get_document,
         commands::documents::save_document,
         commands::links::get_backlinks,
+        commands::search::search,
+        commands::search::rebuild_search_index,
+        commands::search::dev_seed_entities,
     ])
 }
 
