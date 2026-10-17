@@ -10,6 +10,7 @@ use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::models::entity::{Entity, EntityPatch, EntitySummary, NewEntity};
 use crate::models::entity_type;
+use crate::services::search;
 
 /// UTC ISO-8601 with milliseconds and a `Z` suffix.
 fn now() -> String {
@@ -58,7 +59,12 @@ pub fn create(conn: &Connection, input: NewEntity) -> AppResult<Entity> {
         created_at: timestamp.clone(),
         updated_at: timestamp,
     };
-    db::entities::insert(conn, &entity)?;
+    // Row and search-index entry are written together or not at all.
+    // `unchecked_transaction` works on a shared `&Connection`.
+    let tx = conn.unchecked_transaction()?;
+    db::entities::insert(&tx, &entity)?;
+    search::reindex_entity(&tx, &entity.id)?;
+    tx.commit()?;
     Ok(entity)
 }
 
@@ -88,12 +94,19 @@ pub fn update(conn: &Connection, id: &str, patch: EntityPatch) -> AppResult<Enti
         entity.properties = properties;
     }
     entity.updated_at = now();
-    db::entities::update(conn, &entity)?;
+    let tx = conn.unchecked_transaction()?;
+    db::entities::update(&tx, &entity)?;
+    search::reindex_entity(&tx, &entity.id)?;
+    tx.commit()?;
     Ok(entity)
 }
 
 pub fn delete(conn: &Connection, id: &str) -> AppResult<()> {
-    db::entities::delete(conn, id)
+    let tx = conn.unchecked_transaction()?;
+    db::entities::delete(&tx, id)?;
+    search::remove_entity(&tx, id)?;
+    tx.commit()?;
+    Ok(())
 }
 
 #[cfg(test)]

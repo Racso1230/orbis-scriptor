@@ -6,7 +6,7 @@ use rusqlite::Connection;
 use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::models::document::Document;
-use crate::services::links;
+use crate::services::{links, search};
 
 /// An empty TipTap document, returned when an entity has no lore yet so the
 /// frontend never has to special-case "no row".
@@ -54,12 +54,13 @@ pub fn save(
         plain_text,
         updated_at: now(),
     };
-    // The document and its mention links change together or not at all.
+    // The document, its mention links and its search entry change together or not at all.
     // `unchecked_transaction` works with a shared `&Connection`; it is "unchecked"
     // only in that the compiler can't stop us nesting transactions.
     let tx = conn.unchecked_transaction()?;
     db::documents::upsert(&tx, &doc)?;
     links::sync_mentions(&tx, entity_id, &parsed)?;
+    search::reindex_entity(&tx, entity_id)?;
     tx.commit()?;
     Ok(doc)
 }
