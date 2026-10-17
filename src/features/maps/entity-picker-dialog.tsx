@@ -19,6 +19,8 @@ function rank(item: MentionItem): number {
 
 interface Props {
   open: boolean;
+  title?: string;
+  description?: string;
   /** Called with `false` on Escape/outside click: the pin is discarded. */
   onOpenChange: (open: boolean) => void;
   onPickEntity: (entityId: string) => void;
@@ -29,7 +31,14 @@ interface Props {
  * Dialog shown after a click with the Pin tool: pick an existing entity or
  * create a new one. Reuses the `[[` mention picker's matching logic.
  */
-export function EntityPickerDialog({ open, onOpenChange, onPickEntity, onCreateEntity }: Props) {
+export function EntityPickerDialog({
+  open,
+  onOpenChange,
+  onPickEntity,
+  onCreateEntity,
+  title = "Link pin to an entity",
+  description = "Choose an existing entity or create a new one for this pin",
+}: Props) {
   const [query, setQuery] = useState("");
   const entities = useEntities();
   const types = useEntityTypes();
@@ -48,8 +57,8 @@ export function EntityPickerDialog({ open, onOpenChange, onPickEntity, onCreateE
     <CommandDialog
       open={open}
       onOpenChange={handleOpenChange}
-      title="Link pin to an entity"
-      description="Choose an existing entity or create a new one for this pin"
+      title={title}
+      description={description}
       className="sm:max-w-md"
     >
       {/* shouldFilter=false: buildMentionItems already filters and ranks. */}

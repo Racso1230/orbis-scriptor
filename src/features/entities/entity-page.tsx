@@ -28,6 +28,9 @@ import { BacklinksPanel } from "@/features/lore/backlinks-panel";
 import { LoreEditor } from "@/features/lore/lore-editor";
 import { AppearsOnMaps } from "@/features/maps/appears-on-maps";
 import { MapView } from "@/features/maps/map-view";
+import { EntityEvents } from "@/features/timeline/entity-events";
+import { EventDates } from "@/features/timeline/event-dates";
+import { InvolvedPanel } from "@/features/timeline/involved-panel";
 import { useCurrentWorld } from "@/features/worlds/queries";
 import type { Entity, EntityTypeDef, FieldDef } from "@/lib/bindings";
 import { cn } from "@/lib/utils";
@@ -78,6 +81,7 @@ function EntityForm({ entity, type }: { entity: Entity; type: EntityTypeDef | un
   const [properties, setProperties] = useState<Properties>(entity.properties);
 
   const isMap = entity.type === "map";
+  const isEvent = entity.type === "event";
 
   const draft = { name, summary, properties };
   const fields = useAutosave(draft, (value) =>
@@ -92,8 +96,16 @@ function EntityForm({ entity, type }: { entity: Entity; type: EntityTypeDef | un
     (status: SaveStatus, error: string | null) => setLore({ status, error }),
     [],
   );
-  const status = combineStatus(fields.status, lore.status);
-  const error = fields.error ?? lore.error;
+  const [eventSave, setEventSave] = useState<{ status: SaveStatus; error: string | null }>({
+    status: "saved",
+    error: null,
+  });
+  const onEventStatus = useCallback(
+    (status: SaveStatus, error: string | null) => setEventSave({ status, error }),
+    [],
+  );
+  const status = combineStatus(combineStatus(fields.status, lore.status), eventSave.status);
+  const error = fields.error ?? lore.error ?? eventSave.error;
 
   function setProperty(key: string, value: unknown) {
     setProperties((prev) => {
@@ -152,6 +164,8 @@ function EntityForm({ entity, type }: { entity: Entity; type: EntityTypeDef | un
 
       {isMap && <MapView mapEntityId={entity.id} />}
 
+      {isEvent && <EventDates entityId={entity.id} onStatusChange={onEventStatus} />}
+
       <div className="flex flex-col gap-2">
         <Label htmlFor="summary">Summary</Label>
         <Textarea
@@ -181,8 +195,11 @@ function EntityForm({ entity, type }: { entity: Entity; type: EntityTypeDef | un
         <LoreEditor entityId={entity.id} onStatusChange={onLoreStatus} />
       </div>
 
+      {isEvent && <InvolvedPanel eventId={entity.id} />}
+
       <BacklinksPanel entityId={entity.id} />
       {!isMap && <AppearsOnMaps entityId={entity.id} />}
+      {!isMap && !isEvent && <EntityEvents entityId={entity.id} />}
     </div>
   );
 }
