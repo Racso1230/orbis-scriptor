@@ -67,9 +67,9 @@ test("create world, entities, lore mention, search, pin and event", async () => 
   await expect(page.getByRole("textbox", { name: "Name" })).toHaveValue("Aldric the Wanderer");
 
   // 5. Map: create one, import the image, place a pin on Port Hallow.
-  await page.getByRole("button", { name: "New Map" }).click();
-  await page.getByRole("textbox", { name: "Name" }).fill("Shattered Coast");
-  await expectSaved();
+  // createEntity waits for the new page before typing; filling straight away
+  // could rename whichever entity was still open.
+  await createEntity("Map", "Shattered Coast");
   await page.getByRole("button", { name: "Import map image" }).click();
   const canvas = page.locator("canvas").first();
   await expect(canvas).toBeVisible();
@@ -82,11 +82,18 @@ test("create world, entities, lore mention, search, pin and event", async () => 
     .getByRole("option", { name: /Port Hallow/ })
     .first()
     .click();
+  // The picker closes once the pin has been created for the chosen entity.
+  await expect(page.getByPlaceholder(/Search entities, or type a name/)).toHaveCount(0);
   await expect(page.getByText("No pins yet")).toHaveCount(0);
 
-  // The location now lists the map under "appears on maps".
+  // The location now lists the map under "appears on maps". Scope the check
+  // to that panel: the map's name also appears (sometimes hidden) in the
+  // sidebar and tab bar, so a page-wide text match is unreliable.
   await page.getByRole("button", { name: "Port Hallow" }).first().click();
-  await expect(page.getByText("Shattered Coast").first()).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Name" })).toHaveValue("Port Hallow");
+  const appearsOn = page.getByRole("region", { name: "Appears on maps" });
+  await expect(appearsOn.getByRole("heading")).toHaveText("Appears on maps (1)");
+  await expect(appearsOn.getByRole("button", { name: /Shattered Coast/ })).toBeVisible();
 
   // 6. Event: double-click the timeline to create one.
   await page.getByRole("button", { name: "Timeline" }).click();
