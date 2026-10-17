@@ -153,11 +153,11 @@ CREATE INDEX idx_links_target ON links(target_id);
 - [x] Keep the index in sync from the service layer within the same transaction as each write (or via triggers; document the choice) — **chosen: service layer, same transaction** (lore plain text arrives from the editor, triggers would be invisible)
 - [x] `search(query, limit)` returns entity id, type, name and a highlighted snippet, ranked with `bm25`
 - [x] Prefix matching so results appear while typing
-- [ ] Command palette on `Ctrl+K`: search results plus actions ("New character", "Close world"…)
+- [x] Command palette on `Ctrl+K`: search results plus actions ("New character", "Close world"…)
 - [x] `rebuild_search_index()` command for recovery, exposed in a settings/debug menu (gear menu in the header + palette action)
 - [x] Tests: indexing on create/update/delete; prefix search; snippet highlighting; special characters don't break queries
 
-**Acceptance:** with 1,000 generated test entities (add a dev-only seed command), search results appear as you type with no visible lag. _(Frontend tests were written but not run locally: jsdom 30 needs Node >= 22.22. Verify in CI; manual lag check still pending.)_
+**Acceptance:** with 1,000 generated test entities (add a dev-only seed command), search results appear as you type with no visible lag. _(Manual lag check still pending.)_
 
 ---
 
