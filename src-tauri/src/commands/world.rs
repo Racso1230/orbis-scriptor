@@ -32,6 +32,29 @@ fn lock_world<'r>(state: &State<'r, AppState>) -> AppResult<MutexGuard<'r, Optio
         .map_err(|_| AppError::Internal("world state lock is poisoned".into()))
 }
 
+/// Lets the webview load images from the open world's `assets/` folder (and
+/// nothing else) through Tauri's asset protocol. The static scope in
+/// `tauri.conf.json` is empty; this adds the folder at runtime and removes
+/// the previous world's folder, so only one world's files are reachable.
+fn switch_asset_scope(app: &AppHandle, old: Option<&Path>, new: Option<&Path>) {
+    let scope = app.asset_protocol_scope();
+    // Re-opening the same world: nothing to change (revoking would undo the grant).
+    if old == new {
+        return;
+    }
+    // Failures here only affect image display, so they are logged, not fatal.
+    if let Some(dir) = old
+        && let Err(e) = scope.forbid_directory(dir.join(world::ASSETS_DIR), false)
+    {
+        eprintln!("could not revoke asset scope: {e}");
+    }
+    if let Some(dir) = new
+        && let Err(e) = scope.allow_directory(dir.join(world::ASSETS_DIR), false)
+    {
+        eprintln!("could not grant asset scope: {e}");
+    }
+}
+
 /// Puts a freshly created/opened world into state and records it as recent.
 fn install(
     app: &AppHandle,
@@ -40,7 +63,15 @@ fn install(
 ) -> AppResult<WorldSummary> {
     let summary = handle.summary();
     recent_worlds::remember(&recent_file(app)?, &summary)?;
-    *lock_world(state)? = Some(handle);
+    // `replace` swaps in the new world and hands back the previous one (which
+    // is dropped at the end, closing its database).
+    let new_path = handle.path.clone();
+    let previous = lock_world(state)?.replace(handle);
+    switch_asset_scope(
+        app,
+        previous.as_ref().map(|w| w.path.as_path()),
+        Some(&new_path),
+    );
     Ok(summary)
 }
 
@@ -72,8 +103,9 @@ pub fn open_world(
 /// Closes the open world, if any. Dropping the handle closes the database.
 #[tauri::command]
 #[specta::specta]
-pub fn close_world(state: State<'_, AppState>) -> AppResult<()> {
-    *lock_world(&state)? = None;
+pub fn close_world(app: AppHandle, state: State<'_, AppState>) -> AppResult<()> {
+    let previous = lock_world(&state)?.take();
+    switch_asset_scope(&app, previous.as_ref().map(|w| w.path.as_path()), None);
     Ok(())
 }
 
