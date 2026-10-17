@@ -70,7 +70,7 @@ fn prune(dir: &Path, keep: usize) -> AppResult<()> {
         }
     }
     // Newest first, then drop everything after the first `keep`.
-    dated.sort_by(|a, b| b.0.cmp(&a.0));
+    dated.sort_by_key(|a| std::cmp::Reverse(a.0));
     for (_, path) in dated.into_iter().skip(keep) {
         fs::remove_file(path)?;
     }
