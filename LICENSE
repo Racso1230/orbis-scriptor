@@ -1,0 +1,78 @@
+Orbis Scriptor — Source-Available Licence (All Rights Reserved)
+
+Copyright (c) 2026 Oscar Freeman. All rights reserved.
+
+This licence applies to the source code, documentation, artwork (including
+icons and bundled map images) and all other material in this repository and
+in any build of Orbis Scriptor (together, "the Software").
+
+1. Viewing
+
+   You may view and read the source code of the Software, for example on
+   GitHub, for the purposes of learning, evaluation, reviewing its security,
+   or suggesting improvements. Any copying that happens automatically when you
+   view or fork the repository on GitHub is permitted to the extent required
+   by GitHub's Terms of Service.
+
+2. Using the app
+
+   You may download, install and run official builds of the Software
+   published by the copyright holder, for personal or commercial
+   worldbuilding. You may also build the Software from source solely to run
+   it on your own devices for the same purpose.
+
+3. What you may not do
+
+   Except as expressly permitted above, or with prior written permission from
+   the copyright holder, you may not:
+
+   a. copy, reproduce or redistribute the Software or any part of it, in
+      source or compiled form;
+   b. modify the Software, or create derivative works based on it, other than
+      private changes made solely to suggest them back to this project;
+   c. include any part of the Software in another product, project, library
+      or service, whether free or paid;
+   d. sell, sublicense, rent, lend or otherwise commercialise the Software;
+   e. remove or alter any copyright notice or this licence.
+
+4. Your content
+
+   Worlds, text, images and other content that you create or import with the
+   Software belong to you. This licence gives the copyright holder no rights
+   over your content.
+
+5. Contributions
+
+   If you submit a contribution (such as a pull request, patch or issue
+   containing code), you grant the copyright holder a perpetual, worldwide,
+   irrevocable, royalty-free licence to use, modify, sublicense and
+   distribute that contribution as part of the Software under any terms, and
+   you confirm that you have the right to grant this licence.
+
+6. No warranty
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. YOU ARE RESPONSIBLE
+   FOR BACKING UP YOUR OWN DATA.
+
+7. Limitation of liability
+
+   TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL THE COPYRIGHT
+   HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+   ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+   CONNECTION WITH THE SOFTWARE OR THE USE OF OR OTHER DEALINGS IN THE
+   SOFTWARE, INCLUDING LOSS OF DATA.
+
+8. Third-party components
+
+   The Software includes third-party open-source libraries that are licensed
+   under their own terms. Those terms apply to those components, and nothing
+   in this licence restricts rights you have under them.
+
+9. Termination
+
+   Your permissions under this licence end automatically if you breach it.
+
+For permission to do anything not allowed above, contact the copyright holder
+through https://github.com/Racso1230.
