@@ -273,6 +273,7 @@ CREATE INDEX idx_events_start ON events(start_day);
 
 ### Phase 10 — Map editor v2 (v0.2)
 
+- [ ] Blank map: create a map without an image — choose a size and a background (parchment, ocean, plain colour) — so the drawing tools work from scratch
 - [ ] Multiple layers: add, rename, reorder, hide, lock
 - [ ] Freehand and path tools (rivers, roads, borders) with smoothing
 - [ ] Area/polygon tool (kingdoms, regions) with fill styles; areas can link to entities
