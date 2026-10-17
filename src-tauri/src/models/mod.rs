@@ -13,4 +13,5 @@ pub mod event;
 pub mod link;
 pub mod map;
 pub mod search;
+pub mod settings;
 pub mod world;

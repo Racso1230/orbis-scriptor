@@ -10,4 +10,5 @@ pub mod events;
 pub mod links;
 pub mod maps;
 pub mod search;
+pub mod settings;
 pub mod world;

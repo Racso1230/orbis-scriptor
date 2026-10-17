@@ -12,6 +12,10 @@ export const commands = {
 	 *  `tauri::AppHandle` is injected by Tauri; the frontend never passes it.
 	 */
 	appInfo: () => typedError<AppInfo, AppError>(__TAURI_INVOKE("app_info")),
+	/**  The saved app settings (defaults if none are saved yet). */
+	getSettings: () => typedError<AppSettings, AppError>(__TAURI_INVOKE("get_settings")),
+	/**  Saves the settings (numbers are clamped) and returns what was stored. */
+	updateSettings: (settings: AppSettings) => typedError<AppSettings, AppError>(__TAURI_INVOKE("update_settings", { settings })),
 	/**  Creates a new world folder and opens it. */
 	createWorld: (path: string, name: string) => typedError<WorldSummary, AppError>(__TAURI_INVOKE("create_world", { path, name })),
 	/**  Opens an existing world folder (running migrations if needed). */
@@ -129,6 +133,21 @@ export type AppError = { kind: "io"; message: string } | { kind: "validation"; m
 export type AppInfo = {
 	name: string,
 	version: string,
+};
+
+/**
+ *  Per-user app preferences (not per-world), stored in the app config dir.
+ * 
+ *  `#[serde(default)]` on the struct means any field missing from the file
+ *  falls back to its value in `Default::default()`, so files written by an
+ *  older version still load after new settings are added.
+ */
+export type AppSettings = {
+	theme?: Theme,
+	/**  Milliseconds of inactivity before edits are saved. */
+	autosaveDelayMs?: number,
+	/**  Lore editor font size in pixels. */
+	editorFontSize?: number,
 };
 
 /**  An imported image file. The file lives at `<world>/assets/<id>.<ext>`. */
@@ -443,6 +462,9 @@ export type SearchResult = {
 	 */
 	snippet: string,
 };
+
+/**  Colour scheme preference. Serialised as `"light"`, `"dark"` or `"system"`. */
+export type Theme = "light" | "dark" | "system";
 
 /**  What the frontend needs to know about the currently open world. */
 export type WorldSummary = {
