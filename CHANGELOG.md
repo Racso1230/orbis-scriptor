@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-17
+
+First signed release: installs from this version onward can update themselves in-app.
+
+### Added
+
+- Source-available licence (see `LICENSE`): read the code and use official builds; no copying, modification or redistribution without permission.
+
+### Changed
+
+- Release builds are signed for the in-app updater and publish `latest.json`; the release workflow falls back to unsigned installers when no signing key is configured.
+
 ## [0.1.0] - 2026-10-17
 
 First release. A local-first desktop app for fantasy worldbuilding on Windows and Linux.
@@ -25,5 +37,6 @@ First release. A local-first desktop app for fantasy worldbuilding on Windows an
 - Safety: an automatic daily backup of `world.db` when a world is opened (the newest 5 are kept).
 - Release engineering: app icon and installer metadata (MSI and NSIS on Windows, deb and AppImage on Linux), signed in-app update checks via GitHub Releases, a tag-triggered release workflow, and Playwright end-to-end tests of the main flow on Windows.
 
-[Unreleased]: https://github.com/Racso1230/orbis-scriptor/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Racso1230/orbis-scriptor/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/Racso1230/orbis-scriptor/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Racso1230/orbis-scriptor/releases/tag/v0.1.0
