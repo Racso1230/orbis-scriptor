@@ -30,13 +30,36 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["msi", "nsis", "deb", "appimage"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "publisher": "Oscar Freeman",
+    "copyright": "Copyright (c) 2026 Oscar Freeman",
+    "category": "Productivity",
+    "shortDescription": "Local-first fantasy worldbuilding",
+    "longDescription": "Orbis Scriptor is a local-first desktop app for fantasy worldbuilding: maps, lore, timelines, characters and notes, stored in a folder on your own machine.",
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false
+      },
+      "wix": {
+        "language": "en-US"
+      }
+    },
+    "linux": {
+      "deb": {
+        "section": "graphics",
+        "priority": "optional"
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    }
   }
 }
