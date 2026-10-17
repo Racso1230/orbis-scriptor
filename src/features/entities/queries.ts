@@ -58,6 +58,8 @@ export function useUpdateEntity() {
       return Promise.all([
         queryClient.invalidateQueries({ queryKey: entityKeys.list }),
         queryClient.invalidateQueries({ queryKey: searchKeys.all }),
+        // Pins show the linked entity's name and type.
+        queryClient.invalidateQueries({ queryKey: ["maps"] }),
       ]);
     },
   });
@@ -72,6 +74,8 @@ export function useDeleteEntity() {
       return Promise.all([
         queryClient.invalidateQueries({ queryKey: entityKeys.list }),
         queryClient.invalidateQueries({ queryKey: searchKeys.all }),
+        // Pins on maps show the linked entity's name and type.
+        queryClient.invalidateQueries({ queryKey: ["maps"] }),
       ]);
     },
   });

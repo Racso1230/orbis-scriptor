@@ -26,8 +26,11 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { BacklinksPanel } from "@/features/lore/backlinks-panel";
 import { LoreEditor } from "@/features/lore/lore-editor";
+import { AppearsOnMaps } from "@/features/maps/appears-on-maps";
+import { MapView } from "@/features/maps/map-view";
 import { useCurrentWorld } from "@/features/worlds/queries";
 import type { Entity, EntityTypeDef, FieldDef } from "@/lib/bindings";
+import { cn } from "@/lib/utils";
 import { useTabsStore } from "@/stores/tabs-store";
 import { EntityIcon } from "./entity-icon";
 import { useDeleteEntity, useEntity, useEntityTypes, useUpdateEntity } from "./queries";
@@ -74,6 +77,8 @@ function EntityForm({ entity, type }: { entity: Entity; type: EntityTypeDef | un
   const [summary, setSummary] = useState(entity.summary);
   const [properties, setProperties] = useState<Properties>(entity.properties);
 
+  const isMap = entity.type === "map";
+
   const draft = { name, summary, properties };
   const fields = useAutosave(draft, (value) =>
     updateEntity.mutateAsync({ id: entity.id, patch: value }),
@@ -107,7 +112,13 @@ function EntityForm({ entity, type }: { entity: Entity; type: EntityTypeDef | un
   }
 
   return (
-    <div className="flex w-full max-w-3xl flex-col gap-6 p-6">
+    <div
+      className={cn(
+        "flex w-full flex-col gap-6 p-6",
+        // Maps get the whole width; other entities read better in a narrow column.
+        isMap ? "max-w-none" : "max-w-3xl",
+      )}
+    >
       <header className="flex items-center gap-3">
         <EntityIcon icon={type?.icon ?? ""} className="size-6 shrink-0 text-muted-foreground" />
         <Input
@@ -139,6 +150,8 @@ function EntityForm({ entity, type }: { entity: Entity; type: EntityTypeDef | un
         </AlertDialog>
       </header>
 
+      {isMap && <MapView mapEntityId={entity.id} />}
+
       <div className="flex flex-col gap-2">
         <Label htmlFor="summary">Summary</Label>
         <Textarea
@@ -169,6 +182,7 @@ function EntityForm({ entity, type }: { entity: Entity; type: EntityTypeDef | un
       </div>
 
       <BacklinksPanel entityId={entity.id} />
+      {!isMap && <AppearsOnMaps entityId={entity.id} />}
     </div>
   );
 }
