@@ -366,7 +366,11 @@ function TimelineView({ def }: { def: CalendarDefinition }) {
               if (extent.end < -20 || extent.start > width + 20) return null;
               const cy = item.lane * LANE_HEIGHT + LANE_HEIGHT / 2;
               const screenY = LANES_TOP - y + cy;
-              if (screenY < AXIS_HEIGHT - LANE_HEIGHT || screenY > size.height + LANE_HEIGHT) {
+              // Skip lanes scrolled out of view (size is 0 until measured, e.g. in tests).
+              if (
+                size.height > 0 &&
+                (screenY < AXIS_HEIGHT - LANE_HEIGHT || screenY > size.height + LANE_HEIGHT)
+              ) {
                 return null;
               }
               const r = importanceRadius(event.importance);
