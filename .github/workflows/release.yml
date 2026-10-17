@@ -65,4 +65,4 @@ jobs:
           releaseDraft: true
           prerelease: false
           # Uploads latest.json, which the in-app updater reads.
-          includeUpdaterJson: true
+          uploadUpdaterJson: true
