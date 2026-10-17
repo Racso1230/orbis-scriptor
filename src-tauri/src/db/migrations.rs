@@ -51,6 +51,24 @@ const MIGRATIONS_SLICE: &[M<'_>] = &[
         );
         CREATE INDEX idx_links_target ON links(target_id);",
     ),
+    // 005: full-text search. One FTS5 row per entity (name, summary, lore).
+    // `entity_id` is UNINDEXED: stored but not searchable. `remove_diacritics 2`
+    // makes "Elan" match "Élan"; `prefix` builds extra indexes so "dra*" is fast.
+    // The index is kept in sync by services::search (see that module), so the
+    // backfill below only covers rows that already exist.
+    M::up(
+        "CREATE VIRTUAL TABLE search_index USING fts5(
+            entity_id UNINDEXED,
+            name,
+            summary,
+            body,
+            tokenize = 'unicode61 remove_diacritics 2',
+            prefix = '2 3'
+        );
+        INSERT INTO search_index (entity_id, name, summary, body)
+            SELECT e.id, e.name, e.summary, COALESCE(d.plain_text, '')
+            FROM entities e LEFT JOIN documents d ON d.entity_id = e.id;",
+    ),
 ];
 
 pub const MIGRATIONS: Migrations<'_> = Migrations::from_slice(MIGRATIONS_SLICE);

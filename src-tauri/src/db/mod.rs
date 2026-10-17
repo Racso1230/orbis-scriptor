@@ -4,6 +4,7 @@ pub mod documents;
 pub mod entities;
 pub mod links;
 pub mod migrations;
+pub mod search;
 
 use std::path::Path;
 
