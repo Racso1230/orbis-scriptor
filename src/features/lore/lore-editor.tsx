@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useCreateEntity, useEntities, useEntityTypes } from "@/features/entities/queries";
 import type { SaveStatus } from "@/features/entities/use-autosave";
 import { useAutosave } from "@/features/entities/use-autosave";
+import { useSettingsValue } from "@/features/settings/queries";
 import type { EntitySummary } from "@/lib/bindings";
 import { cn } from "@/lib/utils";
 import { useDocument, useSaveDocument } from "./queries";
@@ -88,8 +89,11 @@ function Editor({
     },
   });
 
-  const { status, error } = useAutosave(draft, (value) =>
-    saveDocument.mutateAsync({ entityId, ...value }),
+  const { autosaveDelayMs } = useSettingsValue();
+  const { status, error } = useAutosave(
+    draft,
+    (value) => saveDocument.mutateAsync({ entityId, ...value }),
+    autosaveDelayMs,
   );
   useEffect(() => onStatusChange(status, error), [status, error, onStatusChange]);
 

@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAutosave, type SaveStatus } from "@/features/entities/use-autosave";
+import { useSettingsValue } from "@/features/settings/queries";
 import type { CalendarDefinition, EventSummary } from "@/lib/bindings";
 import { DateEditor } from "./date-editor";
 import { useDefaultCalendar, useEvent, useUpdateEventDates } from "./queries";
@@ -78,11 +79,16 @@ function EventDatesForm({
       ? "The end date must not be before the start date."
       : null;
 
-  const { status, error } = useAutosave(draft, async (value) => {
-    // Invalid ranges stay on screen (with the message below) but are never sent.
-    if (value.endDay !== null && value.endDay < value.startDay) return;
-    await updateDates.mutateAsync({ entityId: event.entityId, ...value });
-  });
+  const { autosaveDelayMs } = useSettingsValue();
+  const { status, error } = useAutosave(
+    draft,
+    async (value) => {
+      // Invalid ranges stay on screen (with the message below) but are never sent.
+      if (value.endDay !== null && value.endDay < value.startDay) return;
+      await updateDates.mutateAsync({ entityId: event.entityId, ...value });
+    },
+    autosaveDelayMs,
+  );
   useEffect(() => {
     onStatusChange?.(status, error);
   }, [status, error, onStatusChange]);

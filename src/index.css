@@ -132,6 +132,12 @@
 /* --- Lore editor (TipTap/ProseMirror) ------------------------------------- */
 @plugin "@tailwindcss/typography";
 
+/* Font size comes from the "editor font size" setting (set on <html> by ThemeProvider).
+   `.tiptap.prose` beats the typography plugin's own `.prose` font-size. */
+.tiptap.prose {
+  font-size: var(--editor-font-size, 16px);
+}
+
 /* Placeholder text on the empty first line. */
 .tiptap p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);

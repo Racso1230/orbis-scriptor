@@ -10,7 +10,8 @@ interface UiState {
 
 /**
  * UI-only state (nothing here comes from the database).
- * Persisted to localStorage for now; Phase 8 moves theme into app settings.
+ * `theme` is only a localStorage cache of the persisted app setting (for a
+ * flash-free first paint); the source of truth is `features/settings`.
  */
 export const useUiStore = create<UiState>()(
   persist(

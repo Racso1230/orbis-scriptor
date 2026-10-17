@@ -38,6 +38,7 @@ import { useTabsStore } from "@/stores/tabs-store";
 import { EntityIcon } from "./entity-icon";
 import { useDeleteEntity, useEntity, useEntityTypes, useUpdateEntity } from "./queries";
 import { SaveIndicator } from "./save-indicator";
+import { useSettingsValue } from "@/features/settings/queries";
 import { useAutosave, type SaveStatus } from "./use-autosave";
 
 type Properties = Entity["properties"];
@@ -84,8 +85,11 @@ function EntityForm({ entity, type }: { entity: Entity; type: EntityTypeDef | un
   const isEvent = entity.type === "event";
 
   const draft = { name, summary, properties };
-  const fields = useAutosave(draft, (value) =>
-    updateEntity.mutateAsync({ id: entity.id, patch: value }),
+  const { autosaveDelayMs } = useSettingsValue();
+  const fields = useAutosave(
+    draft,
+    (value) => updateEntity.mutateAsync({ id: entity.id, patch: value }),
+    autosaveDelayMs,
   );
   const [lore, setLore] = useState<{ status: SaveStatus; error: string | null }>({
     status: "saved",
