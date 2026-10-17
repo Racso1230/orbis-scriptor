@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import {
   copyFileSync,
   existsSync,
@@ -68,10 +68,44 @@ async function waitForCdp(app: ChildProcess, webviewData: string, output: string
   throw new Error(
     [
       `WebView2 DevTools port ${PORT} did not open.`,
-      `WebView2 profile files: ${listFiles(webviewData).join(", ") || "(none — WebView2 never started)"}`,
+      webviewProcesses(),
+      edgePolicies(),
       tail(output),
+      `WebView2 profile (top level): ${listFiles(path.join(webviewData, "EBWebView"), 0).join(", ") || "(none — WebView2 never started)"}`,
     ].join("\n"),
   );
+}
+
+/** Runs a PowerShell snippet for diagnostics; never throws. */
+function powershell(script: string): string {
+  try {
+    return execFileSync("powershell", ["-NoProfile", "-Command", script], {
+      encoding: "utf8",
+      timeout: 20_000,
+    }).trim();
+  } catch (error) {
+    return `(failed: ${String(error)})`;
+  }
+}
+
+/** Command lines of the WebView2 browser processes: did our flag reach them? */
+function webviewProcesses(): string {
+  const out = powershell(
+    "Get-CimInstance Win32_Process -Filter \"name='msedgewebview2.exe'\" | " +
+      "Where-Object { $_.CommandLine -notmatch '--type=' } | " +
+      "ForEach-Object { $_.CommandLine }",
+  );
+  return `WebView2 browser process command lines:\n${out || "(none running)"}`;
+}
+
+/** Edge / WebView2 group policies, which can disable remote debugging. */
+function edgePolicies(): string {
+  const out = powershell(
+    "foreach ($k in 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Edge','HKLM:\\SOFTWARE\\Policies\\Microsoft\\Edge\\WebView2'," +
+      "'HKCU:\\SOFTWARE\\Policies\\Microsoft\\Edge','HKCU:\\SOFTWARE\\Policies\\Microsoft\\Edge\\WebView2') " +
+      '{ if (Test-Path $k) { "[$k]"; (Get-ItemProperty $k | Out-String).Trim() } }',
+  );
+  return `Edge/WebView2 policies:\n${out || "(none)"}`;
 }
 
 /** The last lines the app printed, for error messages. */
