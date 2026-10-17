@@ -1,5 +1,13 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { chromium, type Browser, type Page } from "@playwright/test";
@@ -16,20 +24,62 @@ export interface RunningApp {
   stop: () => Promise<void>;
 }
 
-/** Polls the DevTools endpoint until WebView2 is listening. */
-async function waitForCdp(app: ChildProcess): Promise<void> {
+/** Lists files under `dir` (relative paths), for failure diagnostics. */
+function listFiles(dir: string, depth = 2): string[] {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory() && depth > 0) {
+      return [entry.name + "/", ...listFiles(full, depth - 1).map((p) => `${entry.name}/${p}`)];
+    }
+    return [entry.name];
+  });
+}
+
+/**
+ * WebView2 writes the port it actually opened to `DevToolsActivePort` in its
+ * profile folder. Reading it avoids guessing if the requested port was taken.
+ */
+function activePort(webviewData: string): number | undefined {
+  const file = path.join(webviewData, "EBWebView", "DevToolsActivePort");
+  if (!existsSync(file)) return undefined;
+  const port = Number(readFileSync(file, "utf8").split(/\r?\n/)[0]);
+  return Number.isFinite(port) && port > 0 ? port : undefined;
+}
+
+/** Polls until WebView2's DevTools endpoint answers; returns its port. */
+async function waitForCdp(app: ChildProcess, webviewData: string, output: string[]) {
   const deadline = Date.now() + 90_000;
   while (Date.now() < deadline) {
-    if (app.exitCode !== null) throw new Error(`App exited early (code ${app.exitCode})`);
-    try {
-      const res = await fetch(`http://127.0.0.1:${PORT}/json/version`);
-      if (res.ok) return;
-    } catch {
-      // not listening yet
+    if (app.exitCode !== null) {
+      throw new Error(`App exited early (code ${app.exitCode}).\n${tail(output)}`);
+    }
+    for (const port of new Set([activePort(webviewData), PORT])) {
+      if (port === undefined) continue;
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/json/version`);
+        if (res.ok) return port;
+      } catch {
+        // not listening yet
+      }
     }
     await new Promise((r) => setTimeout(r, 500));
   }
-  throw new Error(`WebView2 DevTools port ${PORT} did not open`);
+  throw new Error(
+    [
+      `WebView2 DevTools port ${PORT} did not open.`,
+      `WebView2 profile files: ${listFiles(webviewData).join(", ") || "(none — WebView2 never started)"}`,
+      tail(output),
+    ].join("\n"),
+  );
+}
+
+/** The last lines the app printed, for error messages. */
+function tail(output: string[]): string {
+  const lines = output.join("").split(/\r?\n/).filter(Boolean).slice(-40);
+  return lines.length
+    ? `App output (last ${lines.length} lines):\n${lines.join("\n")}`
+    : "App printed nothing.";
 }
 
 /**
@@ -52,8 +102,10 @@ export async function startApp(): Promise<RunningApp> {
   const webviewData = path.join(dir, "webview-data");
   mkdirSync(webviewData);
 
+  const output: string[] = [];
   const child = spawn(EXE, [], {
-    stdio: "ignore",
+    // Keep the app's own logs so a failed start can say why.
+    stdio: ["ignore", "pipe", "pipe"],
     // Debug builds regenerate ../src/lib/bindings.ts relative to the working
     // directory on start-up, so run from src-tauri exactly like `tauri dev` does.
     cwd: path.join(ROOT, "src-tauri"),
@@ -66,10 +118,13 @@ export async function startApp(): Promise<RunningApp> {
     },
   });
 
+  child.stdout?.on("data", (chunk: Buffer) => output.push(chunk.toString()));
+  child.stderr?.on("data", (chunk: Buffer) => output.push(chunk.toString()));
+
   let browser: Browser | undefined;
   try {
-    await waitForCdp(child);
-    browser = await chromium.connectOverCDP(`http://127.0.0.1:${PORT}`);
+    const port = await waitForCdp(child, webviewData, output);
+    browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
     const context = browser.contexts()[0];
     if (!context) throw new Error("No WebView2 context found");
     const page = context.pages()[0] ?? (await context.waitForEvent("page"));
