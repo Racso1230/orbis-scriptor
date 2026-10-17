@@ -3,6 +3,7 @@
 
 pub mod app;
 pub mod assets;
+pub mod calendar;
 pub mod dev_seed;
 pub mod documents;
 pub mod entities;

@@ -110,6 +110,36 @@ const MIGRATIONS_SLICE: &[M<'_>] = &[
         CREATE INDEX idx_map_objects_layer ON map_objects(layer_id);
         CREATE INDEX idx_map_objects_entity ON map_objects(entity_id);",
     ),
+    // 007: timeline. Calendars describe how day numbers become dates (JSON
+    // definition, see models::calendar). An event is also an entity (type
+    // 'event'); `events` holds its dates. Day numbers are days from the
+    // world's epoch and may be negative; end_day NULL = single-day event.
+    // This migration also inserts ONE default calendar (12 x 30 days) so
+    // existing and new worlds both have it. Its id is a fixed UUID v7-shaped
+    // string because SQL cannot generate one.
+    // Range queries use start_day (indexed); end_day is checked per row.
+    M::up(
+        r#"CREATE TABLE calendars (
+            id          TEXT PRIMARY KEY,
+            name        TEXT NOT NULL,
+            definition  TEXT NOT NULL,
+            is_default  INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE events (
+            entity_id   TEXT PRIMARY KEY REFERENCES entities(id) ON DELETE CASCADE,
+            calendar_id TEXT NOT NULL REFERENCES calendars(id),
+            start_day   INTEGER NOT NULL,
+            end_day     INTEGER,
+            importance  INTEGER NOT NULL DEFAULT 1
+        );
+        CREATE INDEX idx_events_start ON events(start_day);
+        INSERT INTO calendars (id, name, definition, is_default) VALUES (
+            '00000000-0000-7000-8000-000000000001',
+            'Standard calendar',
+            '{"months":[{"name":"Month 1","days":30},{"name":"Month 2","days":30},{"name":"Month 3","days":30},{"name":"Month 4","days":30},{"name":"Month 5","days":30},{"name":"Month 6","days":30},{"name":"Month 7","days":30},{"name":"Month 8","days":30},{"name":"Month 9","days":30},{"name":"Month 10","days":30},{"name":"Month 11","days":30},{"name":"Month 12","days":30}],"weekdays":["Moonday","Fireday","Waterday","Earthday","Windday","Starday","Sunday"],"eras":[{"name":"Age of Founding","abbreviation":"AF","startDay":0}]}',
+            1
+        );"#,
+    ),
 ];
 
 pub const MIGRATIONS: Migrations<'_> = Migrations::from_slice(MIGRATIONS_SLICE);
@@ -143,5 +173,31 @@ mod tests {
 
         assert_eq!(v1, LATEST_VERSION);
         assert_eq!(v1, v2);
+    }
+
+    #[test]
+    fn upgrading_an_existing_world_adds_the_default_calendar() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        // Simulate a world created before Phase 7: stop at migration 006.
+        MIGRATIONS.to_version(&mut conn, 6).unwrap();
+        let has_table: bool = conn
+            .query_row(
+                "SELECT count(*) > 0 FROM sqlite_master WHERE name = 'calendars'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(!has_table);
+
+        MIGRATIONS.to_latest(&mut conn).unwrap();
+        let calendar = crate::db::calendars::get_default(&conn).unwrap().unwrap();
+        assert!(calendar.is_default);
+        assert_eq!(calendar.definition.months.len(), 12);
+        assert_eq!(
+            calendar.definition.eras[0].abbreviation.as_deref(),
+            Some("AF")
+        );
+        assert!(crate::services::calendar::validate(&calendar.definition).is_ok());
+        assert_eq!(crate::db::calendars::list(&conn).unwrap().len(), 1);
     }
 }
