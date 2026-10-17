@@ -18,6 +18,7 @@ pub const MANIFEST_FILE: &str = "world.json";
 pub const DB_FILE: &str = "world.db";
 pub const BACKUP_FILE: &str = "world.db.bak";
 pub const ASSETS_DIR: &str = "assets";
+pub const BACKUPS_DIR: &str = "backups";
 
 /// Creates a new world in `path`. The folder may not exist yet (it is
 /// created) or must be empty; anything else is refused.

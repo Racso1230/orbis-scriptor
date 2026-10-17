@@ -5,7 +5,7 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::error::{AppError, AppResult};
 use crate::models::world::{RecentWorld, WorldSummary};
-use crate::services::{recent_worlds, world};
+use crate::services::{backups, recent_worlds, world};
 use crate::state::{AppState, WorldHandle};
 
 /// Where the recent-worlds file lives: the per-user app config directory
@@ -97,7 +97,11 @@ pub fn open_world(
     path: String,
 ) -> AppResult<WorldSummary> {
     let handle = world::open_world(Path::new(&path))?;
-    install(&app, &state, handle)
+    let world_dir = handle.path.clone();
+    let summary = install(&app, &state, handle)?;
+    // Daily backup runs in the background; it never blocks or fails the open.
+    backups::spawn_daily(world_dir);
+    Ok(summary)
 }
 
 /// Closes the open world, if any. Dropping the handle closes the database.
