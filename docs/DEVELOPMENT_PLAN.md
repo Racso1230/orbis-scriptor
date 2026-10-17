@@ -233,11 +233,11 @@ CREATE INDEX idx_events_start ON events(start_day);
 - [x] Add `event` as an entity type; new worlds get one default calendar (12 months × 30 days, one era)
 - [x] Rust calendar module: convert day number ↔ (era, year, month, day) and format for display, with thorough unit tests including negative years
 - [x] Commands: `list_events(from_day, to_day)` (range query for the visible window only), create/update event dates
-- [ ] SVG timeline view: horizontal axis, zoom from centuries down to days, drag to pan, adaptive tick labels
-- [ ] Events as points, ranges as bars; overlapping events stack into lanes
-- [ ] Click an event to open it; double-click empty space to create an event at that date
-- [ ] Event pages show "involved" entities using `links` (kind `involved_in`)
-- [ ] Tests: calendar conversions; range queries; lane-stacking algorithm
+- [x] SVG timeline view: horizontal axis, zoom from centuries down to days, drag to pan, adaptive tick labels
+- [x] Events as points, ranges as bars; overlapping events stack into lanes
+- [x] Click an event to open it; double-click empty space to create an event at that date
+- [x] Event pages show "involved" entities using `links` (kind `involved_in`)
+- [x] Tests: calendar conversions; range queries; lane-stacking algorithm
 
 **Acceptance:** create a war (range) and a coronation (point) linked to characters, then zoom between the decade and day views.
 
