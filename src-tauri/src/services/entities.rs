@@ -10,7 +10,7 @@ use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::models::entity::{Entity, EntityPatch, EntitySummary, NewEntity};
 use crate::models::entity_type;
-use crate::services::search;
+use crate::services::{maps, search};
 
 /// UTC ISO-8601 with milliseconds and a `Z` suffix.
 fn now() -> String {
@@ -63,6 +63,10 @@ pub fn create(conn: &Connection, input: NewEntity) -> AppResult<Entity> {
     // `unchecked_transaction` works on a shared `&Connection`.
     let tx = conn.unchecked_transaction()?;
     db::entities::insert(&tx, &entity)?;
+    // A `map` entity also needs its `maps` row and default layer.
+    if entity.entity_type == "map" {
+        maps::create_for_entity(&tx, &entity.id)?;
+    }
     search::reindex_entity(&tx, &entity.id)?;
     tx.commit()?;
     Ok(entity)
@@ -233,5 +237,33 @@ mod tests {
 
         delete(&c, &a.id).unwrap();
         assert!(matches!(get(&c, &a.id), Err(AppError::NotFound(_))));
+    }
+
+    #[test]
+    fn creating_a_map_entity_creates_map_and_default_layer() {
+        let mut c = Connection::open_in_memory().unwrap();
+        c.pragma_update(None, "foreign_keys", "ON").unwrap();
+        MIGRATIONS.to_latest(&mut c).unwrap();
+
+        let e = create(&c, new("map", "Overworld")).unwrap();
+        let info = crate::db::maps::get_map_by_entity(&c, &e.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!((info.width, info.height), (0, 0));
+        assert!(info.background.is_none());
+        let layers = crate::db::maps::list_layers(&c, &info.id).unwrap();
+        assert_eq!(layers.len(), 1);
+        assert_eq!(layers[0].name, "Default");
+        assert_eq!(layers[0].sort_order, 0);
+
+        // Deleting the map entity cascades to maps and layers.
+        delete(&c, &e.id).unwrap();
+        let maps: i64 = c
+            .query_row("SELECT count(*) FROM maps", [], |r| r.get(0))
+            .unwrap();
+        let layers: i64 = c
+            .query_row("SELECT count(*) FROM map_layers", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!((maps, layers), (0, 0));
     }
 }

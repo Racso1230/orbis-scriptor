@@ -69,6 +69,47 @@ const MIGRATIONS_SLICE: &[M<'_>] = &[
             SELECT e.id, e.name, e.summary, COALESCE(d.plain_text, '')
             FROM entities e LEFT JOIN documents d ON d.entity_id = e.id;",
     ),
+    // 006: maps. A map is also an entity (type 'map'); `maps` holds its extra
+    // data. Pins (`map_objects`) may link to an entity; deleting that entity
+    // sets the link to NULL (the pin stays), while deleting the map entity
+    // cascades to its maps, layers and objects.
+    M::up(
+        "CREATE TABLE assets (
+            id          TEXT PRIMARY KEY,   -- UUID v7; the file is assets/<id>.<ext>
+            file_name   TEXT NOT NULL,      -- original file name, for display
+            mime        TEXT NOT NULL,
+            width       INTEGER,
+            height      INTEGER,
+            created_at  TEXT NOT NULL
+        );
+        CREATE TABLE maps (
+            id                  TEXT PRIMARY KEY,
+            entity_id           TEXT NOT NULL UNIQUE REFERENCES entities(id) ON DELETE CASCADE,
+            background_asset_id TEXT REFERENCES assets(id),
+            width               INTEGER NOT NULL,
+            height              INTEGER NOT NULL
+        );
+        CREATE TABLE map_layers (
+            id          TEXT PRIMARY KEY,
+            map_id      TEXT NOT NULL REFERENCES maps(id) ON DELETE CASCADE,
+            name        TEXT NOT NULL,
+            sort_order  INTEGER NOT NULL,
+            visible     INTEGER NOT NULL DEFAULT 1
+        );
+        CREATE INDEX idx_map_layers_map ON map_layers(map_id);
+        CREATE TABLE map_objects (
+            id          TEXT PRIMARY KEY,
+            layer_id    TEXT NOT NULL REFERENCES map_layers(id) ON DELETE CASCADE,
+            kind        TEXT NOT NULL,       -- 'pin' now; 'path' | 'area' | 'label' in Phase 10
+            geometry    TEXT NOT NULL,       -- JSON, in map pixel coordinates
+            style       TEXT NOT NULL DEFAULT '{}',
+            entity_id   TEXT REFERENCES entities(id) ON DELETE SET NULL,
+            created_at  TEXT NOT NULL,
+            updated_at  TEXT NOT NULL
+        );
+        CREATE INDEX idx_map_objects_layer ON map_objects(layer_id);
+        CREATE INDEX idx_map_objects_entity ON map_objects(entity_id);",
+    ),
 ];
 
 pub const MIGRATIONS: Migrations<'_> = Migrations::from_slice(MIGRATIONS_SLICE);

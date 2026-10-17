@@ -8,9 +8,11 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::db;
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::models::document::Document;
 use crate::models::entity::Entity;
+use crate::models::map::{MapGeometry, NewMapObject};
+use crate::services::maps;
 
 const TYPES: [&str; 5] = ["character", "location", "faction", "item", "note"];
 const FIRST: [&str; 12] = [
@@ -112,6 +114,53 @@ pub fn seed(conn: &Connection, count: u32) -> AppResult<u32> {
     Ok(count)
 }
 
+/// Size used for pin positions when the map has no background yet.
+const FALLBACK_MAP_SIZE: (u32, u32) = (2000, 1500);
+
+/// Puts `count` pins at random positions on a map, each linked to a random
+/// non-map entity, for the 500-pin performance check. Returns the count.
+pub fn seed_map_pins(conn: &Connection, map_entity_id: &str, count: u32) -> AppResult<u32> {
+    let info = db::maps::get_map_by_entity(conn, map_entity_id)?
+        .ok_or_else(|| AppError::NotFound(format!("No map for entity {map_entity_id}")))?;
+    let layer_id = db::maps::first_layer_id(conn, &info.id)?
+        .ok_or_else(|| AppError::Internal("map has no layer".into()))?;
+    let (w, h) = if info.width > 0 && info.height > 0 {
+        (info.width, info.height)
+    } else {
+        FALLBACK_MAP_SIZE
+    };
+
+    // Link pins to any entity that is not a map.
+    let mut targets = Vec::new();
+    for t in TYPES {
+        targets.extend(db::maps::entity_ids_of_type(conn, t)?);
+    }
+
+    let mut rng = Lcg(Uuid::now_v7().as_u128() as u64);
+    let tx = conn.unchecked_transaction()?;
+    for _ in 0..count {
+        let entity_id = if targets.is_empty() {
+            None
+        } else {
+            Some(targets[rng.next(targets.len())].clone())
+        };
+        maps::create_object(
+            &tx,
+            NewMapObject {
+                layer_id: layer_id.clone(),
+                geometry: MapGeometry::Pin {
+                    x: rng.next(w as usize) as f64,
+                    y: rng.next(h as usize) as f64,
+                },
+                style: None,
+                entity_id,
+            },
+        )?;
+    }
+    tx.commit()?;
+    Ok(count)
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
@@ -131,5 +180,28 @@ mod tests {
             .unwrap();
         assert_eq!(total, 200);
         assert!(!search::search(&c, "drag", 20).unwrap().is_empty());
+    }
+
+    #[test]
+    fn seeds_map_pins() {
+        use crate::models::entity::NewEntity;
+        use crate::services::entities;
+
+        let mut c = Connection::open_in_memory().unwrap();
+        c.pragma_update(None, "foreign_keys", "ON").unwrap();
+        MIGRATIONS.to_latest(&mut c).unwrap();
+        seed(&c, 20).unwrap();
+        let map = entities::create(
+            &c,
+            NewEntity {
+                entity_type: "map".into(),
+                name: "Test".into(),
+            },
+        )
+        .unwrap();
+        assert_eq!(seed_map_pins(&c, &map.id, 50).unwrap(), 50);
+        let data = maps::get_map(&c, std::path::Path::new("assets"), &map.id).unwrap();
+        assert_eq!(data.objects.len(), 50);
+        assert!(data.objects.iter().all(|o| o.entity_id.is_some()));
     }
 }

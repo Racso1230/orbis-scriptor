@@ -132,6 +132,8 @@ pub fn all() -> Vec<EntityTypeDef> {
             ],
         ),
         def("note", "Note", "Notes", "sticky-note", vec![]),
+        // A map is an entity too; its image and pins live in the `maps*` tables.
+        def("map", "Map", "Maps", "map", vec![]),
     ]
 }
 
@@ -152,6 +154,7 @@ mod tests {
         keys.dedup();
         assert_eq!(keys.len(), types.len());
         assert!(is_valid("character"));
+        assert!(is_valid("map"));
         assert!(!is_valid("dragon"));
     }
 

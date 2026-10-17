@@ -35,6 +35,15 @@ fn specta_builder() -> Builder<tauri::Wry> {
         commands::search::search,
         commands::search::rebuild_search_index,
         commands::search::dev_seed_entities,
+        commands::maps::import_asset,
+        commands::maps::get_asset,
+        commands::maps::get_map,
+        commands::maps::set_map_background,
+        commands::maps::create_map_object,
+        commands::maps::update_map_object,
+        commands::maps::delete_map_object,
+        commands::maps::list_entity_map_appearances,
+        commands::maps::dev_seed_map_pins,
     ])
 }
 

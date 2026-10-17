@@ -1,8 +1,10 @@
 //! Database layer: SQL and row mapping live here and nowhere else.
 
+pub mod assets;
 pub mod documents;
 pub mod entities;
 pub mod links;
+pub mod maps;
 pub mod migrations;
 pub mod search;
 

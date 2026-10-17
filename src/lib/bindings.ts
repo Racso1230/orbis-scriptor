@@ -55,6 +55,28 @@ export const commands = {
 	 *  registered (so bindings are stable) but refuses to run in release builds.
 	 */
 	devSeedEntities: (count: number) => typedError<number, AppError>(__TAURI_INVOKE("dev_seed_entities", { count })),
+	/**
+	 *  Imports an image file into the open world's `assets/` folder.
+	 * 
+	 *  The slow part (validating and copying the file) runs WITHOUT the database
+	 *  lock; the lock is only taken for the quick row insert. The thumbnail is
+	 *  made on a background thread, so `thumbPath` is usually `null` in the
+	 *  returned asset (call `get_asset` later to pick it up).
+	 */
+	importAsset: (path: string) => typedError<Asset, AppError>(__TAURI_INVOKE("import_asset", { path })),
+	/**  One asset with its absolute `path` and (if ready) `thumbPath`. */
+	getAsset: (assetId: string) => typedError<Asset, AppError>(__TAURI_INVOKE("get_asset", { assetId })),
+	/**  A map (looked up by its entity id) with layers and objects. */
+	getMap: (entityId: string) => typedError<MapData, AppError>(__TAURI_INVOKE("get_map", { entityId })),
+	/**  Sets the map's background image and resizes the map to the image. */
+	setMapBackground: (entityId: string, assetId: string) => typedError<MapInfo, AppError>(__TAURI_INVOKE("set_map_background", { entityId, assetId })),
+	createMapObject: (input: NewMapObject) => typedError<MapObject, AppError>(__TAURI_INVOKE("create_map_object", { input })),
+	updateMapObject: (id: string, patch: MapObjectPatch) => typedError<MapObject, AppError>(__TAURI_INVOKE("update_map_object", { id, patch })),
+	deleteMapObject: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("delete_map_object", { id })),
+	/**  Every pin that points at `entity_id` (for the "appears on maps" panel). */
+	listEntityMapAppearances: (entityId: string) => typedError<MapAppearance[], AppError>(__TAURI_INVOKE("list_entity_map_appearances", { entityId })),
+	/**  Development only: adds `count` random pins to a map for performance tests. */
+	devSeedMapPins: (mapEntityId: string, count: number) => typedError<number, AppError>(__TAURI_INVOKE("dev_seed_map_pins", { mapEntityId, count })),
 };
 
 /* Types */
@@ -75,6 +97,28 @@ export type AppError = { kind: "io"; message: string } | { kind: "validation"; m
 export type AppInfo = {
 	name: string,
 	version: string,
+};
+
+/**  An imported image file. The file lives at `<world>/assets/<id>.<ext>`. */
+export type Asset = {
+	id: string,
+	/**  The original file name, for display only. */
+	fileName: string,
+	mime: string,
+	width: number | null,
+	height: number | null,
+	createdAt: string,
+	/**
+	 *  Absolute path of the image file. NOT stored in the database: the
+	 *  service fills it in from the open world's folder. The frontend turns it
+	 *  into a URL with `convertFileSrc(path)`.
+	 */
+	path: string,
+	/**
+	 *  Absolute path of the thumbnail (max 512px PNG), or `None` while it is
+	 *  still being generated on the background thread (or if that failed).
+	 */
+	thumbPath: string | null,
 };
 
 /**  One entity that mentions another, with a snippet of the surrounding text. */
@@ -158,10 +202,98 @@ export type FieldDef = {
 /**  How a type-specific field is edited. */
 export type FieldKind = "text" | "number" | "select";
 
+/**  One place where an entity appears as a pin ("appears on maps"). */
+export type MapAppearance = {
+	mapEntityId: string,
+	mapName: string,
+	objectId: string,
+	geometry: MapGeometry,
+};
+
+/**  Everything the map view needs in one call. */
+export type MapData = {
+	map: MapInfo,
+	layers: MapLayer[],
+	objects: MapObject[],
+};
+
+/**
+ *  Which kinds of map object exist. Serialised as `{ "kind": "pin", "x": 1, "y": 2 }`.
+ * 
+ *  This is an "internally tagged" enum: serde writes the variant name into a
+ *  `kind` field next to the variant's own fields. Phase 10 adds `Path`,
+ *  `Area` and `Label` variants. The same JSON is stored in
+ *  `map_objects.geometry`; coordinates are in map pixels (origin top-left).
+ */
+export type MapGeometry = { kind: "pin"; x: number | null; y: number | null };
+
+/**  A map row plus its background asset (if one has been set). */
+export type MapInfo = {
+	/**  `maps.id` (internal; commands address maps by `entity_id`). */
+	id: string,
+	/**  The entity (type `map`) that represents this map in the sidebar. */
+	entityId: string,
+	name: string,
+	/**  Pixels; 0 until a background is set. */
+	width: number,
+	height: number,
+	background: Asset | null,
+};
+
+export type MapLayer = {
+	id: string,
+	mapId: string,
+	name: string,
+	sortOrder: number,
+	visible: boolean,
+};
+
+export type MapObject = {
+	id: string,
+	layerId: string,
+	geometry: MapGeometry,
+	/**  Free-form style object (colour, size...). `{}` by default. */
+	style: { [key in string]: unknown },
+	/**  The linked entity, or `None` for an unlinked pin. */
+	entityId: string | null,
+	/**
+	 *  Convenience copies from the linked entity, so the map can pick an icon
+	 *  and show a hover label without extra lookups.
+	 */
+	entityType: string | null,
+	entityName: string | null,
+	createdAt: string,
+	updatedAt: string,
+};
+
+/**
+ *  Input for `update_map_object`: only the `Some` fields change.
+ *  `unlink_entity: true` clears the link (a plain `None` entity id means
+ *  "leave it alone", so a separate flag is needed to remove it).
+ */
+export type MapObjectPatch = {
+	geometry: MapGeometry | null,
+	style: { [key in string]: unknown } | null,
+	entityId: string | null,
+	unlinkEntity?: boolean,
+};
+
 /**  Input for `create_entity`. */
 export type NewEntity = {
 	type: string,
 	name: string,
+};
+
+/**
+ *  Input for `create_map_object`. The `kind` column is derived from the
+ *  geometry variant, so it cannot disagree with it.
+ */
+export type NewMapObject = {
+	layerId: string,
+	geometry: MapGeometry,
+	/**  Defaults to `{}` when omitted. */
+	style: { [key in string]: unknown } | null,
+	entityId: string | null,
 };
 
 /**  One row of the "recent worlds" list on the welcome screen. */
