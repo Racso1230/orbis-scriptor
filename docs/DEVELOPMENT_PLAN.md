@@ -308,7 +308,21 @@ CREATE INDEX idx_events_start ON events(start_day);
 ### Phase 12 — Templates and export (v0.3)
 
 - [ ] User-defined entity types and field templates
-- [ ] Export world to Markdown folder (Obsidian-compatible links); export entity or world to PDF
+  - Custom types: label, plural, icon (curated lucide allow-list) and colour (`#RRGGBB`, used for pins and graph nodes); key `custom-<slug>`, immutable once created; at most 50 custom types, labels unique (case-insensitive) across all types
+  - Field templates: built-in types keep their fixed fields and can gain extra user fields; custom types own all of theirs (at most 40 per type, keys `[a-z][a-z0-9_]{0,39}` unique per type and never colliding with built-in field keys)
+  - Field kinds: text, long text, number, boolean, select, multi-select, date (in-world day number, shown with the display calendar), entity reference (one or many, optionally limited to some types) and URL
+  - Removing a field or changing its kind never destroys stored values; unknown keys in an entity's properties are kept but not validated; deleting a type needs a "move entities to" target when entities of that type exist
+  - Entity-reference values also create `field_ref` links, so backlinks and the graph (opt-in edge kind) see them
+- [ ] Export world to Markdown folder (Obsidian-compatible links)
+  - One folder per type, one `.md` per entity with YAML frontmatter (fields, dates, `[[links]]`), the lore converted from TipTap JSON to Markdown, a Relationships section, and an index `README.md`
+  - Links use the final unique file name (`[[File|Display name]]`); map background images are copied to `assets/` and embedded
+  - Runs on a background thread with progress events; written to a temporary folder and renamed at the end, so a failed export leaves nothing half-written
+- [ ] Export an entity or the whole world to PDF
+  - Print-friendly HTML view of an entity (or of the whole world) printed through the webview's print dialog ("Save as PDF"); no Rust PDF engine
+
+**Tests:** migration 011 on an existing database; merged type list; type and field validation (label uniqueness, key collisions, icon and colour, limits); property validation per field kind; `field_ref` link sync; type delete and reassign; TipTap to Markdown converter for every node and mark, escaping and mentions; file name sanitising, collisions and Windows reserved names; full export of the sample world (files, frontmatter, links resolve, assets copied, no temporary folder left, overwrite refusal); Vitest for the field form and type editor; Playwright flow for creating a type and exporting.
+
+**Acceptance:** create a 'Deity' type with Domain (select), Symbol (text) and Worshippers (entity reference to factions) fields; create two deities; export the sample world to Markdown, open the folder in Obsidian and follow `[[links]]` between entities; print a character to PDF.
 
 ### Phase 13 — Import and quality of life (v0.4)
 
