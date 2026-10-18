@@ -294,7 +294,14 @@ CREATE INDEX idx_events_start ON events(start_day);
 ### Phase 11 — Custom calendars and eras (v0.3)
 
 - [ ] Calendar editor: months and lengths, weekdays, eras, optional leap rules
+  - Leap rules: one month gains N extra days in leap years; Gregorian-style cycles ("every 4 add, every 100 remove, every 400 add"), evaluated on the year count from the calendar's epoch (negative years work)
+  - Epoch offset: each calendar can be shifted against the world's absolute day numbers
+  - Create, edit, duplicate, delete and set-default for calendars; live preview of an unsaved definition with field-level validation messages
 - [ ] Multiple calendars per world with conversion between them
+  - All calendars share the world's absolute day numbers, so converting a date is formatting the same day with another calendar; events never move when a calendar is edited
+  - The timeline and every date editor can switch between calendars; the chosen display calendar is stored per world
+- **Tests:** leap-year arithmetic against brute force, round trips (including leap days and +/-10^12), epoch shifts, weekday continuity, definition validation, calendar CRUD (delete reassigns events, default/last calendar protected), shared golden fixtures that keep the TypeScript calendar port in lockstep (Rust and Vitest); Playwright flow for the editor.
+- **Acceptance:** create a second calendar with 13 months, a leap day every 4 years except every 100, and two eras; switch the timeline and an event's date editor between calendars and see the same moment shown in each.
 
 ### Phase 12 — Templates and export (v0.3)
 
