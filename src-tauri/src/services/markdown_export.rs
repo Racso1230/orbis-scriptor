@@ -1099,15 +1099,14 @@ mod tests {
             .iter()
             .filter(|p| p.starts_with(summary.path.join("assets")))
             .collect();
-        assert_eq!(assets.len(), 1);
+        // The map picture and Queen Isolde's portrait.
+        assert_eq!(assets.len(), 2);
         let map_note =
             fs::read_to_string(summary.path.join("Maps/Map of the Shattered Coast.md")).unwrap();
-        let asset_name = assets[0]
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
-        assert!(map_note.contains(&format!("![[assets/{asset_name}]]")));
+        assert!(assets.iter().any(|a| {
+            let name = a.file_name().unwrap().to_string_lossy().into_owned();
+            map_note.contains(&format!("![[assets/{name}]]"))
+        }));
         assert!(map_note.contains("## Pins\n\n- [["));
         assert!(map_note.contains("- [[Port Veyra]]"));
 
@@ -1148,6 +1147,35 @@ mod tests {
         assert!(body.contains("## Relationships"));
         assert!(body.contains("- child of [[King Aldous Varn]]"));
         assert!(body.contains("## Events"));
+        // Tags, portrait and gallery (portrait first, captions kept).
+        let tags: Vec<&str> = front["tags"]
+            .as_sequence()
+            .unwrap()
+            .iter()
+            .filter_map(|t| t.as_str())
+            .collect();
+        assert_eq!(tags, vec!["royalty"]);
+        let portrait = front["portrait"].as_str().unwrap();
+        assert!(portrait.starts_with("assets/") && portrait.ends_with(".png"));
+        assert!(summary.path.join(portrait).is_file());
+        let images = front["images"].as_sequence().unwrap();
+        assert_eq!(images.len(), 1);
+        assert_eq!(images[0]["file"].as_str(), Some(portrait));
+        assert_eq!(
+            images[0]["caption"].as_str(),
+            Some("Official court portrait")
+        );
+        assert!(body.contains(&format!(
+            "## Gallery
+
+![[{portrait}|Official court portrait]]"
+        )));
+        // The marker file records the custom types for a later import.
+        let marker = fs::read_to_string(summary.path.join(MARKER_FILE)).unwrap();
+        let manifest: ExportManifest = serde_json::from_str(&marker).unwrap();
+        assert_eq!(manifest.custom_types.len(), 1);
+        assert_eq!(manifest.custom_types[0].label, "Deity");
+        assert_eq!(manifest.custom_types[0].fields.len(), 3);
         // An event note: dates formatted with the display calendar.
         let events_dir = summary.path.join("Events");
         let some_event = fs::read_dir(&events_dir)
@@ -1182,6 +1210,12 @@ mod tests {
         let isolde =
             fs::read_to_string(summary.path.join("Characters/Queen Isolde Varn.md")).unwrap();
         assert!(!isolde.contains("## Events"));
+        // Tags stay; without assets there is no gallery.
+        assert!(isolde.contains(
+            "tags:
+  - \"royalty\""
+        ));
+        assert!(!isolde.contains("portrait:") && !isolde.contains("## Gallery"));
         // References to left-out entities are plain text, never dangling links.
         let (_, body) = front_matter(&isolde);
         let stems: HashSet<String> = all_files(&summary.path)

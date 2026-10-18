@@ -321,6 +321,49 @@ mod tests {
     }
 
     #[test]
+    fn migration_012_adds_tags_favourites_and_galleries_and_keeps_entities() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        MIGRATIONS.to_version(&mut conn, 11).unwrap();
+        conn.execute_batch(
+            "INSERT INTO entities (id, type, name, summary, properties, created_at, updated_at)
+               VALUES ('e1', 'character', 'Ada', 'sum', '{}', 't', 't');",
+        )
+        .unwrap();
+        MIGRATIONS.to_latest(&mut conn).unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        let (favorite, name): (i64, String) = conn
+            .query_row("SELECT favorite, name FROM entities", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!((favorite, name.as_str()), (0, "Ada"));
+        // Tag names are unique ignoring case; links cascade.
+        conn.execute(
+            "INSERT INTO tags (id, name, created_at) VALUES ('t1', 'Royal', 't')",
+            [],
+        )
+        .unwrap();
+        assert!(
+            conn.execute(
+                "INSERT INTO tags (id, name, created_at) VALUES ('t2', 'ROYAL', 't')",
+                []
+            )
+            .is_err()
+        );
+        conn.execute(
+            "INSERT INTO entity_tags (entity_id, tag_id) VALUES ('e1', 't1')",
+            [],
+        )
+        .unwrap();
+        conn.execute("DELETE FROM entities WHERE id = 'e1'", [])
+            .unwrap();
+        let links: i64 = conn
+            .query_row("SELECT count(*) FROM entity_tags", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(links, 0);
+    }
+
+    #[test]
     fn migration_008_adds_the_kind_index() {
         let mut conn = Connection::open_in_memory().unwrap();
         MIGRATIONS.to_version(&mut conn, 7).unwrap();

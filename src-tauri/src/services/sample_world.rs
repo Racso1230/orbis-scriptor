@@ -20,8 +20,8 @@ use crate::models::entity_type::{FieldInput, FieldKind};
 use crate::models::map::{Asset, MapGeometry, NewMapObject, Point};
 use crate::services::world::{self, ASSETS_DIR};
 use crate::services::{
-    assets, calendar, calendar_manager, documents, entities, entity_types, events, maps,
-    relationships,
+    assets, calendar, calendar_manager, documents, entities, entity_types, events, gallery, maps,
+    relationships, tags,
 };
 use crate::state::WorldHandle;
 
@@ -628,6 +628,70 @@ fn import_map_image(conn: &Connection, assets_dir: &Path) -> AppResult<Asset> {
     Ok(asset)
 }
 
+/// Tags of the sample world, by entity name. Nested tags use `/`.
+const TAGS: [(&str, &[&str]); 11] = [
+    ("Queen Isolde Varn", &["royalty"]),
+    ("King Aldous Varn", &["royalty"]),
+    ("Lady Seren Varn", &["royalty"]),
+    ("Prince Corwin Varn", &["royalty"]),
+    ("House Varn", &["royalty"]),
+    ("The Shattered Crown", &["royalty"]),
+    ("Port Veyra", &["coast", "places/cities"]),
+    ("Stormwatch Keep", &["coast", "places/fortresses"]),
+    ("Highmarch Citadel", &["places/fortresses"]),
+    ("The Tidewardens", &["coast"]),
+    ("Whisperwood", &["places/wilds"]),
+];
+
+/// A small generated portrait: a soft purple disc on a dark blue ground, so
+/// the sample needs no bundled picture. Returns the encoded PNG bytes.
+fn portrait_png() -> AppResult<Vec<u8>> {
+    const SIZE: u32 = 192;
+    let centre = SIZE as f32 / 2.0;
+    let img = image::RgbImage::from_fn(SIZE, SIZE, |x, y| {
+        let d = (((x as f32 - centre).powi(2) + (y as f32 - centre).powi(2)).sqrt()) / centre;
+        if d < 0.62 {
+            // Inside the disc: lighter towards the middle.
+            let t = (1.0 - d / 0.62).clamp(0.0, 1.0);
+            image::Rgb([(120.0 + 90.0 * t) as u8, (70.0 + 60.0 * t) as u8, 190])
+        } else {
+            image::Rgb([22, 32, (60.0 + 40.0 * (1.0 - d.min(1.0))) as u8])
+        }
+    });
+    let mut out = std::io::Cursor::new(Vec::new());
+    img.write_to(&mut out, image::ImageFormat::Png)
+        .map_err(|e| AppError::Internal(format!("cannot encode the sample portrait: {e}")))?;
+    Ok(out.into_inner())
+}
+
+/// Gives Queen Isolde a generated portrait (the first gallery image).
+fn add_portrait(conn: &Connection, assets_dir: &Path, entity_id: &str) -> AppResult<()> {
+    let bytes = portrait_png()?;
+    fs::create_dir_all(assets_dir)?;
+    let asset = assets::with_paths(
+        Asset {
+            id: Uuid::now_v7().to_string(),
+            file_name: "queen-isolde-portrait.png".into(),
+            mime: "image/png".into(),
+            width: Some(192),
+            height: Some(192),
+            created_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            path: String::new(),
+            thumb_path: None,
+        },
+        assets_dir,
+    );
+    fs::write(&asset.path, bytes)?;
+    maps::register_asset(conn, &asset)?;
+    if let Err(e) = assets::make_thumbnail(assets_dir, &asset.id, &asset.mime) {
+        eprintln!("sample portrait thumbnail failed: {e}");
+    }
+    let image = gallery::add_from_asset(conn, assets_dir, entity_id, &asset.id)?;
+    gallery::update_caption(conn, assets_dir, &image.id, Some("Official court portrait"))?;
+    gallery::set_portrait(conn, assets_dir, entity_id, Some(&image.id))?;
+    Ok(())
+}
+
 /// Fills an empty, freshly created world with the sample content.
 pub fn populate(conn: &Connection, assets_dir: &Path) -> AppResult<()> {
     // name -> id, so lore and events can refer to things by name.
@@ -787,6 +851,19 @@ pub fn populate(conn: &Connection, assets_dir: &Path) -> AppResult<()> {
         let (content, plain_text) = build_document(text, &ids)?;
         documents::save(conn, id, content, plain_text)?;
     }
+
+    // Tags, a favourite and a portrait (Phase 13).
+    for (name, names) in TAGS {
+        let id = ids
+            .get(name)
+            .ok_or_else(|| AppError::Internal(format!("tags for unknown entity {name}")))?;
+        let names: Vec<String> = names.iter().map(|n| (*n).to_owned()).collect();
+        tags::set_entity_tags(conn, id, &names)?;
+    }
+    if let Some(queen) = ids.get("Queen Isolde Varn") {
+        entities::set_favorite(conn, queen, true)?;
+        add_portrait(conn, assets_dir, queen)?;
+    }
     Ok(())
 }
 
@@ -840,6 +917,47 @@ mod tests {
         assert_eq!(count("map"), 1);
         assert_eq!(count("event"), 5);
         assert_eq!(count("custom-deity"), 2);
+    }
+
+    #[test]
+    fn has_tags_a_favourite_and_a_portrait() {
+        let (_dir, w) = sample();
+        let names: Vec<String> = tags::list(&w.conn)
+            .unwrap()
+            .into_iter()
+            .map(|t| t.name)
+            .collect();
+        assert_eq!(
+            names,
+            vec![
+                "coast",
+                "places/cities",
+                "places/fortresses",
+                "places/wilds",
+                "royalty"
+            ]
+        );
+        // `places` finds the nested tags: 2 fortresses, 1 city, 1 wild.
+        let places = tags::list_entities_by_tag(&w.conn, &["places".to_owned()], false).unwrap();
+        assert_eq!(places.len(), 4);
+        let queen = id_of(&w.conn, "Queen Isolde Varn");
+        let favs = entities::list_favorites(&w.conn).unwrap();
+        assert_eq!(favs.len(), 1);
+        assert_eq!(favs[0].id, queen);
+        let assets_dir = w.path.join(ASSETS_DIR);
+        let images = gallery::list(&w.conn, &assets_dir, &queen).unwrap();
+        assert_eq!(images.len(), 1);
+        assert!(images[0].is_portrait);
+        assert!(std::path::Path::new(&images[0].path).is_file());
+        let mut list = entities::list(&w.conn, Some("character")).unwrap();
+        gallery::attach_portraits(&w.conn, &assets_dir, &mut list).unwrap();
+        let with_portrait: Vec<&str> = list
+            .iter()
+            .filter(|e| e.portrait.is_some())
+            .map(|e| e.name.as_str())
+            .collect();
+        assert_eq!(with_portrait, vec!["Queen Isolde Varn"]);
+        assert_eq!(search::search(&w.conn, "tag:royalty", 20).unwrap().len(), 6);
     }
 
     #[test]
