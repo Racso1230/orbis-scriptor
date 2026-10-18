@@ -14,10 +14,13 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
+use crate::models::calendar::{CalendarDefinition, Era, LeapCycle, LeapRule, Month};
 use crate::models::entity::{EntityPatch, NewEntity};
 use crate::models::map::{Asset, MapGeometry, NewMapObject, Point};
 use crate::services::world::{self, ASSETS_DIR};
-use crate::services::{assets, calendar, documents, entities, events, maps, relationships};
+use crate::services::{
+    assets, calendar, calendar_manager, documents, entities, events, maps, relationships,
+};
 use crate::state::WorldHandle;
 
 /// Name of the world and of the folder created inside the chosen parent.
@@ -295,6 +298,69 @@ const STAMPS: [(&str, f64, f64); 4] = [
     ("forest", 300.0, 700.0),
     ("city", 1330.0, 700.0),
 ];
+
+/// The second calendar of the sample world: how the elves of the Silverwood
+/// count time. Eight uneven months, a leap day every 5 years (not every 50,
+/// but every 250), two eras, and an epoch 2 million days before the
+/// Standard calendar's day 0 so the year numbers are very different.
+fn elven_calendar() -> CalendarDefinition {
+    let months = [
+        ("Aelmir", 45),
+        ("Brindal", 46),
+        ("Calith", 44),
+        ("Dorwen", 45),
+        ("Eluvia", 46),
+        ("Faenor", 44),
+        ("Galadwen", 45),
+        ("Hesperin", 43),
+    ];
+    let epoch = -2_000_000;
+    CalendarDefinition {
+        months: months
+            .iter()
+            .map(|(name, days)| Month {
+                name: (*name).into(),
+                days: *days,
+            })
+            .collect(),
+        weekdays: ["Lumen", "Sylva", "Aqua", "Terra", "Astra"]
+            .iter()
+            .map(|d| (*d).to_owned())
+            .collect(),
+        eras: vec![
+            Era {
+                name: "Age of Starlight".into(),
+                abbreviation: Some("AS".into()),
+                start_day: epoch,
+            },
+            Era {
+                name: "Age of Embers".into(),
+                abbreviation: Some("AE".into()),
+                start_day: 300_000,
+            },
+        ],
+        epoch_offset: epoch,
+        leap: Some(LeapRule {
+            // The last month, Hesperin, gains a day in leap years.
+            month_index: 7,
+            extra_days: 1,
+            rules: vec![
+                LeapCycle {
+                    every: 5,
+                    add: true,
+                },
+                LeapCycle {
+                    every: 50,
+                    add: false,
+                },
+                LeapCycle {
+                    every: 250,
+                    add: true,
+                },
+            ],
+        }),
+    }
+}
 
 /// (year, month, day) in the default calendar.
 type Ymd = (i64, u32, u32);
@@ -583,6 +649,9 @@ pub fn populate(conn: &Connection, assets_dir: &Path) -> AppResult<()> {
         )?;
     }
 
+    // A second calendar, so the timeline can be shown in either one.
+    calendar_manager::create(conn, "Elven Reckoning", elven_calendar())?;
+
     // Events: dates become day numbers through the default calendar.
     let cal = calendar::get_default(conn)?.definition;
     let day = |(year, month, d): Ymd| calendar::from_date(&cal, 0, year, month, d);
@@ -645,6 +714,7 @@ pub fn create(parent: &Path) -> AppResult<WorldHandle> {
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::models::calendar::DateStyle;
     use crate::services::{graph, links, search};
 
     fn sample() -> (tempfile::TempDir, WorldHandle) {
@@ -735,6 +805,31 @@ mod tests {
         let area = kinds("area");
         assert_eq!(area[0].layer_id, data.layers[1].id);
         assert_eq!(area[0].entity_name.as_deref(), Some("House Varn"));
+    }
+
+    #[test]
+    fn has_a_second_calendar_that_shows_the_same_days_differently() {
+        let (_dir, w) = sample();
+        let all = calendar::list(&w.conn).unwrap();
+        assert_eq!(all.len(), 2);
+        let standard = calendar::get_default(&w.conn).unwrap();
+        assert_eq!(standard.name, "Standard calendar");
+        let elven = all.iter().find(|c| c.name == "Elven Reckoning").unwrap();
+        assert!(!elven.is_default);
+        assert!(calendar::validate(&elven.definition).is_ok());
+        assert_eq!(elven.definition.months.len(), 8);
+        assert_eq!(elven.definition.eras.len(), 2);
+
+        // The same event day reads differently in each calendar, and both
+        // convert back to the same absolute day.
+        let day = events::list(&w.conn, -1_000_000, 1_000_000).unwrap()[0].start_day;
+        let std_text = calendar::format(&standard.definition, day, DateStyle::Full).unwrap();
+        let elf_text = calendar::format(&elven.definition, day, DateStyle::Full).unwrap();
+        assert_ne!(std_text, elf_text);
+        let d = calendar::to_date(&elven.definition, day).unwrap();
+        let back =
+            calendar::from_date(&elven.definition, d.era_index, d.year, d.month, d.day).unwrap();
+        assert_eq!(back, day);
     }
 
     #[test]
