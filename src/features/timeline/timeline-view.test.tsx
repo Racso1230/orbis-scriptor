@@ -16,6 +16,8 @@ const commands = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/bindings", () => ({ commands }));
+const navigate = vi.hoisted(() => vi.fn());
+vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate }));
 vi.mock("@/features/entities/use-open-entity", () => ({ useOpenEntity: () => vi.fn() }));
 
 // Smoke test only: pan/zoom/drag are covered by the pure scale/ticks/lanes tests.
@@ -79,5 +81,15 @@ describe("TimelinePage", () => {
     expect(formatDate(ELVEN.definition, 0, "monthYear")).not.toBe(
       formatDate(STANDARD.definition, 0, "monthYear"),
     );
+  });
+
+  it("opens the calendar manager from the switcher", async () => {
+    renderWithQuery(<TimelinePage />);
+    await screen.findByLabelText("Centre of the view");
+    fireEvent.change(await screen.findByRole("combobox", { name: "Display calendar" }), {
+      target: { value: "__manage__" },
+    });
+    expect(navigate).toHaveBeenCalledWith({ to: "/world/calendars" });
+    expect(commands.setDisplayCalendar).not.toHaveBeenCalled();
   });
 });
