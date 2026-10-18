@@ -9,6 +9,7 @@ pub mod dev_seed;
 pub mod documents;
 pub mod entities;
 pub mod events;
+pub mod export;
 pub mod graph;
 pub mod links;
 pub mod maps;

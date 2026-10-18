@@ -7,6 +7,7 @@ pub mod calendars;
 pub mod documents;
 pub mod entities;
 pub mod events;
+pub mod export;
 pub mod links;
 pub mod maps;
 pub mod relationships;

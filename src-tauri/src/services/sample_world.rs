@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::models::entity::{EntityPatch, NewEntity};
-use crate::models::map::{Asset, MapGeometry, NewMapObject};
+use crate::models::map::{Asset, MapGeometry, NewMapObject, Point};
 use crate::services::world::{self, ASSETS_DIR};
 use crate::services::{assets, calendar, documents, entities, events, maps, relationships};
 use crate::state::WorldHandle;
@@ -262,6 +262,40 @@ const PINS: [(&str, f64, f64); 5] = [
     ("Whisperwood", 280.0, 650.0),
 ];
 
+/// The river "Ashen": flows from the western mountains east into the bay of
+/// the inland sea.
+const RIVER: [(f64, f64); 7] = [
+    (470.0, 600.0),
+    (540.0, 640.0),
+    (620.0, 650.0),
+    (700.0, 675.0),
+    (760.0, 655.0),
+    (800.0, 645.0),
+    (830.0, 635.0),
+];
+
+/// Outline of House Varn's kingdom on the eastern lands.
+const KINGDOM: [(f64, f64); 10] = [
+    (1240.0, 520.0),
+    (1400.0, 420.0),
+    (1560.0, 430.0),
+    (1600.0, 600.0),
+    (1610.0, 740.0),
+    (1520.0, 850.0),
+    (1400.0, 950.0),
+    (1280.0, 880.0),
+    (1230.0, 760.0),
+    (1200.0, 640.0),
+];
+
+/// Stamps: (icon key, x, y).
+const STAMPS: [(&str, f64, f64); 4] = [
+    ("mountain", 1060.0, 320.0),
+    ("mountain", 500.0, 520.0),
+    ("forest", 300.0, 700.0),
+    ("city", 1330.0, 700.0),
+];
+
 /// (year, month, day) in the default calendar.
 type Ymd = (i64, u32, u32);
 
@@ -362,6 +396,89 @@ fn build_document(text: &str, ids: &HashMap<String, String>) -> AppResult<(Strin
     Ok((doc.to_string(), plain.join("\n\n")))
 }
 
+/// Adds a river with a label along it, stamps, and (on a second layer called
+/// "Borders") the kingdom of House Varn.
+fn add_map_shapes(
+    conn: &Connection,
+    map_entity_id: &str,
+    layer_id: &str,
+    ids: &HashMap<String, String>,
+) -> AppResult<()> {
+    let to_points = |pairs: &[(f64, f64)]| -> Vec<Point> {
+        pairs.iter().map(|&(x, y)| Point { x, y }).collect()
+    };
+    let new = |layer_id: &str, geometry, style, entity_id| NewMapObject {
+        id: None,
+        layer_id: layer_id.to_owned(),
+        geometry,
+        style: Some(style),
+        entity_id,
+        created_at: None,
+    };
+
+    let river = maps::create_object(
+        conn,
+        new(
+            layer_id,
+            MapGeometry::Path {
+                points: to_points(&RIVER),
+                closed: false,
+            },
+            json!({ "stroke": "#2b6cb0", "strokeWidth": 5, "smoothing": 0.5 }),
+            None,
+        ),
+    )?;
+    maps::create_object(
+        conn,
+        new(
+            layer_id,
+            MapGeometry::Label {
+                x: 620.0,
+                y: 640.0,
+                text: "River Ashen".into(),
+                rotation: 0.0,
+                path_id: Some(river.id),
+            },
+            json!({ "fontSize": 20, "fontFamily": "serif", "color": "#1a365d" }),
+            None,
+        ),
+    )?;
+    for (icon, x, y) in STAMPS {
+        maps::create_object(
+            conn,
+            new(
+                layer_id,
+                MapGeometry::Stamp {
+                    x,
+                    y,
+                    icon: icon.into(),
+                    scale: 1.0,
+                    rotation: 0.0,
+                },
+                json!({}),
+                None,
+            ),
+        )?;
+    }
+
+    let borders = maps::create_layer(conn, map_entity_id, "Borders")?;
+    maps::create_object(
+        conn,
+        new(
+            &borders.id,
+            MapGeometry::Area {
+                points: to_points(&KINGDOM),
+            },
+            json!({
+                "stroke": "#7b341e", "strokeWidth": 3, "dash": [10, 6],
+                "fill": "#c05621", "fillOpacity": 0.25, "fillPattern": "hatch"
+            }),
+            ids.get("House Varn").cloned(),
+        ),
+    )?;
+    Ok(())
+}
+
 /// Writes the embedded map image into `assets/` and registers it.
 fn import_map_image(conn: &Connection, assets_dir: &Path) -> AppResult<Asset> {
     fs::create_dir_all(assets_dir)?;
@@ -440,13 +557,16 @@ pub fn populate(conn: &Connection, assets_dir: &Path) -> AppResult<()> {
         maps::create_object(
             conn,
             NewMapObject {
+                id: None,
                 layer_id: layer_id.clone(),
                 geometry: MapGeometry::Pin { x, y },
                 style: None,
                 entity_id: ids.get(name).cloned(),
+                created_at: None,
             },
         )?;
     }
+    add_map_shapes(conn, &map.id, &layer_id, &ids)?;
 
     // Relationships between the entities above (by name).
     for (source, kind, target, label) in relationship_seeds() {
@@ -578,12 +698,43 @@ mod tests {
         assert_eq!((data.map.width, data.map.height), MAP_SIZE);
         let bg = data.map.background.unwrap();
         assert!(Path::new(&bg.path).exists());
-        assert_eq!(data.objects.len(), PINS.len());
+        let pins: Vec<_> = data
+            .objects
+            .iter()
+            .filter(|o| matches!(o.geometry, MapGeometry::Pin { .. }))
+            .collect();
+        assert_eq!(pins.len(), PINS.len());
         assert!(
-            data.objects
-                .iter()
+            pins.iter()
                 .all(|o| o.entity_type.as_deref() == Some("location"))
         );
+    }
+
+    #[test]
+    fn map_has_river_label_stamps_and_a_kingdom_on_a_borders_layer() {
+        let (dir, w) = sample();
+        let assets_dir = dir.path().join(SAMPLE_NAME).join(ASSETS_DIR);
+        let map_id = id_of(&w.conn, "Map of the Shattered Coast");
+        let data = maps::get_map(&w.conn, &assets_dir, &map_id).unwrap();
+        assert_eq!(data.layers.len(), 2);
+        assert_eq!(data.layers[1].name, "Borders");
+        let kinds = |k: &str| {
+            data.objects
+                .iter()
+                .filter(|o| o.geometry.kind() == k)
+                .collect::<Vec<_>>()
+        };
+        let river = kinds("path");
+        assert_eq!(river.len(), 1);
+        let labels = kinds("label");
+        assert!(matches!(
+            &labels[0].geometry,
+            MapGeometry::Label { path_id: Some(id), .. } if *id == river[0].id
+        ));
+        assert_eq!(kinds("stamp").len(), STAMPS.len());
+        let area = kinds("area");
+        assert_eq!(area[0].layer_id, data.layers[1].id);
+        assert_eq!(area[0].entity_name.as_deref(), Some("House Varn"));
     }
 
     #[test]

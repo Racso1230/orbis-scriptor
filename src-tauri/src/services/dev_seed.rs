@@ -12,7 +12,7 @@ use crate::error::{AppError, AppResult};
 use crate::models::document::Document;
 use crate::models::entity::Entity;
 use crate::models::link::KIND_INVOLVED_IN;
-use crate::models::map::{MapGeometry, NewMapObject};
+use crate::models::map::{MapGeometry, NewMapObject, Point};
 use crate::services::maps;
 
 const TYPES: [&str; 5] = ["character", "location", "faction", "item", "note"];
@@ -148,6 +148,8 @@ pub fn seed_map_pins(conn: &Connection, map_entity_id: &str, count: u32) -> AppR
         maps::create_object(
             &tx,
             NewMapObject {
+                id: None,
+                created_at: None,
                 layer_id: layer_id.clone(),
                 geometry: MapGeometry::Pin {
                     x: rng.next(w as usize) as f64,
@@ -285,6 +287,118 @@ pub fn seed_relationships(conn: &Connection, count: u32) -> AppResult<u32> {
     Ok(created)
 }
 
+/// Icon keys used for random stamps (the real library lives in the frontend).
+const STAMP_ICONS: [&str; 5] = ["city", "castle", "mountain", "forest", "tower"];
+
+/// Adds `count` random shapes to a map for performance tests: paths, areas,
+/// labels (some following earlier paths) and stamps, in rotation. Returns the
+/// number created.
+pub fn seed_map_shapes(conn: &Connection, map_entity_id: &str, count: u32) -> AppResult<u32> {
+    let info = db::maps::get_map_by_entity(conn, map_entity_id)?
+        .ok_or_else(|| AppError::NotFound(format!("No map for entity {map_entity_id}")))?;
+    let layer_id = db::maps::first_layer_id(conn, &info.id)?
+        .ok_or_else(|| AppError::Internal("map has no layer".into()))?;
+    let (w, h) = if info.width > 0 && info.height > 0 {
+        (info.width, info.height)
+    } else {
+        FALLBACK_MAP_SIZE
+    };
+
+    let mut rng = Lcg(Uuid::now_v7().as_u128() as u64);
+    // Ids of the paths made so far, so labels can follow them.
+    let mut path_ids: Vec<String> = Vec::new();
+    let tx = conn.unchecked_transaction()?;
+    for i in 0..count {
+        let x = rng.next(w as usize) as f64;
+        let y = rng.next(h as usize) as f64;
+        let (geometry, style) = match i % 4 {
+            0 => {
+                // A wandering line: each point is a small step from the last.
+                let mut points = vec![Point { x, y }];
+                for _ in 0..(3 + rng.next(10)) {
+                    let last = points[points.len() - 1];
+                    points.push(Point {
+                        x: (last.x + rng.next(120) as f64 - 40.0).clamp(0.0, f64::from(w)),
+                        y: (last.y + rng.next(120) as f64 - 60.0).clamp(0.0, f64::from(h)),
+                    });
+                }
+                (
+                    MapGeometry::Path {
+                        points,
+                        closed: false,
+                    },
+                    json!({ "stroke": "#2b6cb0", "strokeWidth": 3, "smoothing": 0.5 }),
+                )
+            }
+            1 => {
+                // A rough hexagon around (x, y).
+                let radius = 40.0 + rng.next(120) as f64;
+                let points = (0..6)
+                    .map(|k| {
+                        let angle = f64::from(k) * std::f64::consts::PI / 3.0;
+                        Point {
+                            x: x + radius * angle.cos(),
+                            y: y + radius * angle.sin(),
+                        }
+                    })
+                    .collect();
+                (
+                    MapGeometry::Area { points },
+                    json!({ "fill": "#c05621", "fillOpacity": 0.3, "stroke": "#7b341e", "fillPattern": "hatch" }),
+                )
+            }
+            2 => {
+                let path_id = if path_ids.is_empty() {
+                    None
+                } else {
+                    Some(path_ids[rng.next(path_ids.len())].clone())
+                };
+                (
+                    MapGeometry::Label {
+                        x,
+                        y,
+                        text: format!(
+                            "{} {}",
+                            FIRST[rng.next(FIRST.len())],
+                            SECOND[rng.next(SECOND.len())]
+                        ),
+                        rotation: 0.0,
+                        path_id,
+                    },
+                    json!({ "fontSize": 18, "color": "#1a202c" }),
+                )
+            }
+            _ => (
+                MapGeometry::Stamp {
+                    x,
+                    y,
+                    icon: STAMP_ICONS[rng.next(STAMP_ICONS.len())].to_owned(),
+                    scale: 1.0,
+                    rotation: 0.0,
+                },
+                json!({}),
+            ),
+        };
+        let is_path = matches!(geometry, MapGeometry::Path { .. });
+        let object = maps::create_object(
+            &tx,
+            NewMapObject {
+                id: None,
+                layer_id: layer_id.clone(),
+                geometry,
+                style: Some(style),
+                entity_id: None,
+                created_at: None,
+            },
+        )?;
+        if is_path {
+            path_ids.push(object.id);
+        }
+    }
+    tx.commit()?;
+    Ok(count)
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
@@ -350,6 +464,36 @@ mod tests {
         let data = maps::get_map(&c, std::path::Path::new("assets"), &map.id).unwrap();
         assert_eq!(data.objects.len(), 50);
         assert!(data.objects.iter().all(|o| o.entity_id.is_some()));
+    }
+
+    #[test]
+    fn seeds_map_shapes_of_every_kind() {
+        use crate::models::entity::NewEntity;
+        use crate::services::entities;
+
+        let mut c = Connection::open_in_memory().unwrap();
+        c.pragma_update(None, "foreign_keys", "ON").unwrap();
+        MIGRATIONS.to_latest(&mut c).unwrap();
+        let map = entities::create(
+            &c,
+            NewEntity {
+                entity_type: "map".into(),
+                name: "Test".into(),
+            },
+        )
+        .unwrap();
+        assert_eq!(seed_map_shapes(&c, &map.id, 40).unwrap(), 40);
+        let data = maps::get_map(&c, std::path::Path::new("assets"), &map.id).unwrap();
+        assert_eq!(data.objects.len(), 40);
+        for kind in ["path", "area", "label", "stamp"] {
+            assert_eq!(
+                data.objects
+                    .iter()
+                    .filter(|o| o.geometry.kind() == kind)
+                    .count(),
+                10
+            );
+        }
     }
 
     #[test]

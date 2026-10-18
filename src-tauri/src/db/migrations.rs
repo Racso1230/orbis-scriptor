@@ -144,6 +144,12 @@ const MIGRATIONS_SLICE: &[M<'_>] = &[
     // graph queries that filter by kind. Lookups by source are already served
     // by the index behind UNIQUE (source_id, target_id, kind).
     M::up("CREATE INDEX idx_links_kind ON links(kind);"),
+    // 009: map editor v2 (Phase 10). Blank maps store their look as JSON in
+    // `background_style` (NULL = image map); layers can be locked.
+    M::up(
+        "ALTER TABLE maps ADD COLUMN background_style TEXT;
+        ALTER TABLE map_layers ADD COLUMN locked INTEGER NOT NULL DEFAULT 0;",
+    ),
 ];
 
 pub const MIGRATIONS: Migrations<'_> = Migrations::from_slice(MIGRATIONS_SLICE);
@@ -218,5 +224,26 @@ mod tests {
             )
             .unwrap();
         assert!(has_index);
+    }
+
+    #[test]
+    fn migration_009_keeps_existing_maps_and_layers() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        MIGRATIONS.to_version(&mut conn, 8).unwrap();
+        conn.execute_batch(
+            "INSERT INTO entities (id, type, name, summary, properties, created_at, updated_at)
+               VALUES ('e1', 'map', 'Old', '', '{}', 't', 't');
+             INSERT INTO maps (id, entity_id, width, height) VALUES ('m1', 'e1', 10, 10);
+             INSERT INTO map_layers (id, map_id, name, sort_order) VALUES ('l1', 'm1', 'Default', 0);",
+        )
+        .unwrap();
+        MIGRATIONS.to_latest(&mut conn).unwrap();
+        let style: Option<String> = conn
+            .query_row("SELECT background_style FROM maps", [], |r| r.get(0))
+            .unwrap();
+        let locked: i64 = conn
+            .query_row("SELECT locked FROM map_layers", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!((style, locked), (None, 0));
     }
 }

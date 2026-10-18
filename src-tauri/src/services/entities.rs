@@ -10,6 +10,7 @@ use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::models::entity::{Entity, EntityPatch, EntitySummary, NewEntity};
 use crate::models::entity_type;
+use crate::models::map::MapBackground;
 use crate::services::{events, maps, search};
 
 /// UTC ISO-8601 with milliseconds and a `Z` suffix.
@@ -47,7 +48,25 @@ fn validate_properties(properties: &Value) -> AppResult<()> {
 
 pub fn create(conn: &Connection, input: NewEntity) -> AppResult<Entity> {
     // A plain `event` created here starts on day 0 with no end.
-    create_with_dates(conn, input, 0, None)
+    create_with_dates(conn, input, 0, None, None)
+}
+
+/// Creates a `map` entity without an image: the `maps` row gets this size
+/// and background look instead of 0x0. Entity, map row, default layer and
+/// search entry are committed together.
+pub fn create_blank_map(
+    conn: &Connection,
+    name: &str,
+    width: u32,
+    height: u32,
+    background: &MapBackground,
+) -> AppResult<Entity> {
+    maps::validate_blank(width, height, background)?;
+    let input = NewEntity {
+        entity_type: "map".into(),
+        name: name.into(),
+    };
+    create_with_dates(conn, input, 0, None, Some((width, height, background)))
 }
 
 /// Creates an `event` entity with the given dates in one transaction.
@@ -60,16 +79,18 @@ pub fn create_event(
     if input.entity_type != "event" {
         return Err(AppError::Validation("Not an event entity".into()));
     }
-    create_with_dates(conn, input, start_day, end_day)
+    create_with_dates(conn, input, start_day, end_day, None)
 }
 
 /// Shared by both functions above. The dates are only used for `event`
-/// entities and ignored for every other type.
+/// entities and ignored for every other type; `blank_map` (size and look) is
+/// only used for `map` entities.
 fn create_with_dates(
     conn: &Connection,
     input: NewEntity,
     start_day: i64,
     end_day: Option<i64>,
+    blank_map: Option<(u32, u32, &MapBackground)>,
 ) -> AppResult<Entity> {
     validate_type(&input.entity_type)?;
     let name = validate_name(&input.name)?;
@@ -90,7 +111,12 @@ fn create_with_dates(
     db::entities::insert(&tx, &entity)?;
     // A `map` entity also needs its `maps` row and default layer.
     if entity.entity_type == "map" {
-        maps::create_for_entity(&tx, &entity.id)?;
+        match blank_map {
+            Some((width, height, background)) => {
+                maps::create_blank_for_entity(&tx, &entity.id, width, height, background)?;
+            }
+            None => maps::create_for_entity(&tx, &entity.id)?,
+        }
     }
     // An `event` entity needs its `events` row (default calendar).
     if entity.entity_type == "event" {

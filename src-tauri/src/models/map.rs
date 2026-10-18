@@ -26,16 +26,71 @@ pub struct Asset {
     pub thumb_path: Option<String>,
 }
 
+/// A point in map pixels (origin top-left). `#[specta(type = Number)]`
+/// makes the generated TypeScript say `number` instead of `number | null`
+/// (specta otherwise allows `null` because a Rust `f64` could be NaN, which
+/// JSON writes as `null`; we reject non-finite values anyway).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Type)]
+pub struct Point {
+    #[specta(type = specta_typescript::Number)]
+    pub x: f64,
+    #[specta(type = specta_typescript::Number)]
+    pub y: f64,
+}
+
 /// Which kinds of map object exist. Serialised as `{ "kind": "pin", "x": 1, "y": 2 }`.
 ///
 /// This is an "internally tagged" enum: serde writes the variant name into a
-/// `kind` field next to the variant's own fields. Phase 10 adds `Path`,
-/// `Area` and `Label` variants. The same JSON is stored in
+/// `kind` field next to the variant's own fields. The same JSON is stored in
 /// `map_objects.geometry`; coordinates are in map pixels (origin top-left).
+/// Rotations are in degrees, clockwise.
+///
+/// | kind    | `map_objects.kind` | notes |
+/// | ------- | ------------------ | ----- |
+/// | `pin`   | `pin`   | a point, usually linked to an entity |
+/// | `path`  | `path`  | polyline for rivers, roads, borders and freehand strokes (2..=20000 points); `closed` joins the last point to the first. The frontend simplifies/smooths before saving; `style.smoothing` tells the renderer to curve it |
+/// | `area`  | `area`  | polygon (3..=20000 points), filled; may link to an entity (kingdom, region) |
+/// | `label` | `label` | text (1..=200 chars) at `x`,`y`. If `pathId` is set the text follows that path object (same map); deleting the path detaches the label (`pathId` becomes null, `x`,`y` kept) |
+/// | `stamp` | `stamp` | icon from the frontend stamp library (`icon` key: 1..=64 chars of `a-z0-9-`), `scale` > 0 |
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum MapGeometry {
-    Pin { x: f64, y: f64 },
+    Pin {
+        #[specta(type = specta_typescript::Number)]
+        x: f64,
+        #[specta(type = specta_typescript::Number)]
+        y: f64,
+    },
+    Path {
+        points: Vec<Point>,
+        closed: bool,
+    },
+    Area {
+        points: Vec<Point>,
+    },
+    Label {
+        #[specta(type = specta_typescript::Number)]
+        x: f64,
+        #[specta(type = specta_typescript::Number)]
+        y: f64,
+        text: String,
+        #[specta(type = specta_typescript::Number)]
+        rotation: f64,
+        // `rename` because the enum-level `rename_all` only renames variants.
+        #[serde(rename = "pathId", default)]
+        path_id: Option<String>,
+    },
+    Stamp {
+        #[specta(type = specta_typescript::Number)]
+        x: f64,
+        #[specta(type = specta_typescript::Number)]
+        y: f64,
+        icon: String,
+        #[specta(type = specta_typescript::Number)]
+        scale: f64,
+        #[specta(type = specta_typescript::Number)]
+        rotation: f64,
+    },
 }
 
 impl MapGeometry {
@@ -43,8 +98,32 @@ impl MapGeometry {
     pub fn kind(&self) -> &'static str {
         match self {
             MapGeometry::Pin { .. } => "pin",
+            MapGeometry::Path { .. } => "path",
+            MapGeometry::Area { .. } => "area",
+            MapGeometry::Label { .. } => "label",
+            MapGeometry::Stamp { .. } => "stamp",
         }
     }
+}
+
+/// What a map shows when it has no background image.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum BackgroundKind {
+    Parchment,
+    Ocean,
+    Plain,
+}
+
+/// The look of a "blank" map (one without a background image). Stored as JSON
+/// in `maps.background_style`; `None` there means "image map".
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct MapBackground {
+    pub kind: BackgroundKind,
+    /// `#RRGGBB`. The fill colour for `plain`; an optional tint for the
+    /// others. `None` = the frontend's default colour for that kind.
+    pub color: Option<String>,
 }
 
 /// A map row plus its background asset (if one has been set).
@@ -60,6 +139,8 @@ pub struct MapInfo {
     pub width: u32,
     pub height: u32,
     pub background: Option<Asset>,
+    /// Look of a blank map; `None` for maps that use (or wait for) an image.
+    pub background_style: Option<MapBackground>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -70,6 +151,8 @@ pub struct MapLayer {
     pub name: String,
     pub sort_order: i32,
     pub visible: bool,
+    /// A locked layer rejects creating, changing and deleting its objects.
+    pub locked: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
@@ -78,7 +161,11 @@ pub struct MapObject {
     pub id: String,
     pub layer_id: String,
     pub geometry: MapGeometry,
-    /// Free-form style object (colour, size...). `{}` by default.
+    /// Free-form JSON object (max 4 KB), `{}` by default. Keys the frontend
+    /// uses (all optional): `stroke` (#hex), `strokeWidth` (px), `dash`
+    /// (number[]), `smoothing` (0..1 curve tension), `fill` (#hex),
+    /// `fillOpacity` (0..1), `fillPattern` ("none" | "hatch" | "dots"),
+    /// `fontSize`, `fontFamily`, `color` (#hex, text colour).
     #[specta(type = HashMap<String, specta_typescript::Unknown>)]
     pub style: Value,
     /// The linked entity, or `None` for an unlinked pin.
@@ -105,12 +192,22 @@ pub struct MapData {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct NewMapObject {
+    /// Optional client-chosen UUID. Undo/redo uses it to recreate an object
+    /// with the SAME id (so labels, links etc. stay valid). Rejected if an
+    /// object with that id already exists. `None` = the server generates one.
+    #[serde(default)]
+    pub id: Option<String>,
     pub layer_id: String,
     pub geometry: MapGeometry,
     /// Defaults to `{}` when omitted.
     #[specta(type = Option<HashMap<String, specta_typescript::Unknown>>)]
     pub style: Option<Value>,
     pub entity_id: Option<String>,
+    /// Optional RFC 3339 creation time. Objects are drawn in creation order
+    /// within a layer, so undoing a delete passes the original value to
+    /// restore the stacking order.
+    #[serde(default)]
+    pub created_at: Option<String>,
 }
 
 /// Input for `update_map_object`: only the `Some` fields change.
@@ -125,6 +222,33 @@ pub struct MapObjectPatch {
     pub entity_id: Option<String>,
     #[serde(default)]
     pub unlink_entity: bool,
+    /// Move the object to another layer of the same map (must not be locked).
+    #[serde(default)]
+    pub layer_id: Option<String>,
+}
+
+/// One step of an atomic batch for `apply_map_ops`. Serialised with an `op`
+/// field: `{ "op": "create", "object": {...} }`, `{ "op": "update", "id": ..,
+/// "patch": {...} }` or `{ "op": "delete", "id": .. }`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(tag = "op", rename_all = "camelCase")]
+pub enum MapOp {
+    Create { object: NewMapObject },
+    Update { id: String, patch: MapObjectPatch },
+    Delete { id: String },
+}
+
+/// What `apply_map_ops` changed, in their final state.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct MapOpsResult {
+    /// Objects created or updated by the batch that still exist afterwards.
+    pub objects: Vec<MapObject>,
+    /// Ids removed by `delete` ops.
+    pub deleted_ids: Vec<String>,
+    /// Labels that were detached from a deleted path as a side effect
+    /// (`pathId` is now null). To undo, restore `pathId` on these.
+    pub detached: Vec<MapObject>,
 }
 
 /// One place where an entity appears as a pin ("appears on maps").

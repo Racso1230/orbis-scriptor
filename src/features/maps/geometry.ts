@@ -6,13 +6,12 @@ export interface Point {
 }
 
 /**
- * specta types the coordinates of a pin as `number | null` (Rust `f64` can be
- * NaN/infinite, which JSON cannot carry). This guard narrows them to real numbers.
+ * Returns the position of a pin, or `null` for any other shape (paths, areas,
+ * labels, stamps) or for non-finite coordinates.
  */
 export function pinPoint(geometry: MapGeometry): Point | null {
   if (geometry.kind !== "pin") return null;
   const { x, y } = geometry;
-  if (typeof x !== "number" || typeof y !== "number") return null;
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
   return { x, y };
 }

@@ -95,6 +95,36 @@ export const commands = {
 	listEntityMapAppearances: (entityId: string) => typedError<MapAppearance[], AppError>(__TAURI_INVOKE("list_entity_map_appearances", { entityId })),
 	/**  Development only: adds `count` random pins to a map for performance tests. */
 	devSeedMapPins: (mapEntityId: string, count: number) => typedError<number, AppError>(__TAURI_INVOKE("dev_seed_map_pins", { mapEntityId, count })),
+	/**  Development only: adds `count` random paths, areas, labels and stamps. */
+	devSeedMapShapes: (mapEntityId: string, count: number) => typedError<number, AppError>(__TAURI_INVOKE("dev_seed_map_shapes", { mapEntityId, count })),
+	/**
+	 *  Creates a map entity without a background image: a blank canvas of the
+	 *  given size (256..=16384 per side) with a parchment, ocean or plain look.
+	 */
+	createBlankMap: (name: string, width: number, height: number, background: MapBackground) => typedError<MapData, AppError>(__TAURI_INVOKE("create_blank_map", { name, width, height, background })),
+	/**  Changes the look of a blank map. Refused for maps with an image. */
+	setMapBackgroundStyle: (entityId: string, background: MapBackground) => typedError<MapInfo, AppError>(__TAURI_INVOKE("set_map_background_style", { entityId, background })),
+	/**  Resizes a blank map. Refused for maps with an image. */
+	setMapSize: (entityId: string, width: number, height: number) => typedError<MapInfo, AppError>(__TAURI_INVOKE("set_map_size", { entityId, width, height })),
+	/**  Adds a layer on top of the map's others. */
+	createLayer: (mapEntityId: string, name: string) => typedError<MapLayer, AppError>(__TAURI_INVOKE("create_layer", { mapEntityId, name })),
+	renameLayer: (layerId: string, name: string) => typedError<MapLayer, AppError>(__TAURI_INVOKE("rename_layer", { layerId, name })),
+	setLayerVisibility: (layerId: string, visible: boolean) => typedError<MapLayer, AppError>(__TAURI_INVOKE("set_layer_visibility", { layerId, visible })),
+	setLayerLocked: (layerId: string, locked: boolean) => typedError<MapLayer, AppError>(__TAURI_INVOKE("set_layer_locked", { layerId, locked })),
+	/**  Sets the stacking order (bottom first). Must list exactly the map's layers. */
+	reorderLayers: (mapEntityId: string, layerIdsInOrder: string[]) => typedError<MapLayer[], AppError>(__TAURI_INVOKE("reorder_layers", { mapEntityId, layerIdsInOrder })),
+	/**  Deletes a layer and its objects. The last layer cannot be deleted. */
+	deleteLayer: (layerId: string) => typedError<null, AppError>(__TAURI_INVOKE("delete_layer", { layerId })),
+	/**
+	 *  Applies a batch of object creates/updates/deletes atomically (one
+	 *  undo step). Any failing op rolls the whole batch back.
+	 */
+	applyMapOps: (mapEntityId: string, ops: MapOp[]) => typedError<MapOpsResult, AppError>(__TAURI_INVOKE("apply_map_ops", { mapEntityId, ops })),
+	/**
+	 *  Writes an exported PNG (base64 text) to a path chosen with the native
+	 *  save dialog. Does not need an open world.
+	 */
+	saveExport: (path: string, pngBase64: string) => typedError<null, AppError>(__TAURI_INVOKE("save_export", { path, pngBase64 })),
 	/**  The world's default calendar. */
 	getDefaultCalendar: () => typedError<Calendar, AppError>(__TAURI_INVOKE("get_default_calendar")),
 	listCalendars: () => typedError<Calendar[], AppError>(__TAURI_INVOKE("list_calendars")),
@@ -209,6 +239,9 @@ export type Asset = {
 	 */
 	thumbPath: string | null,
 };
+
+/**  What a map shows when it has no background image. */
+export type BackgroundKind = "parchment" | "ocean" | "plain";
 
 /**  One entity that mentions another, with a snippet of the surrounding text. */
 export type Backlink = {
@@ -440,6 +473,19 @@ export type MapAppearance = {
 	geometry: MapGeometry,
 };
 
+/**
+ *  The look of a "blank" map (one without a background image). Stored as JSON
+ *  in `maps.background_style`; `None` there means "image map".
+ */
+export type MapBackground = {
+	kind: BackgroundKind,
+	/**
+	 *  `#RRGGBB`. The fill colour for `plain`; an optional tint for the
+	 *  others. `None` = the frontend's default colour for that kind.
+	 */
+	color: string | null,
+};
+
 /**  Everything the map view needs in one call. */
 export type MapData = {
 	map: MapInfo,
@@ -451,11 +497,19 @@ export type MapData = {
  *  Which kinds of map object exist. Serialised as `{ "kind": "pin", "x": 1, "y": 2 }`.
  * 
  *  This is an "internally tagged" enum: serde writes the variant name into a
- *  `kind` field next to the variant's own fields. Phase 10 adds `Path`,
- *  `Area` and `Label` variants. The same JSON is stored in
+ *  `kind` field next to the variant's own fields. The same JSON is stored in
  *  `map_objects.geometry`; coordinates are in map pixels (origin top-left).
+ *  Rotations are in degrees, clockwise.
+ * 
+ *  | kind    | `map_objects.kind` | notes |
+ *  | ------- | ------------------ | ----- |
+ *  | `pin`   | `pin`   | a point, usually linked to an entity |
+ *  | `path`  | `path`  | polyline for rivers, roads, borders and freehand strokes (2..=20000 points); `closed` joins the last point to the first. The frontend simplifies/smooths before saving; `style.smoothing` tells the renderer to curve it |
+ *  | `area`  | `area`  | polygon (3..=20000 points), filled; may link to an entity (kingdom, region) |
+ *  | `label` | `label` | text (1..=200 chars) at `x`,`y`. If `pathId` is set the text follows that path object (same map); deleting the path detaches the label (`pathId` becomes null, `x`,`y` kept) |
+ *  | `stamp` | `stamp` | icon from the frontend stamp library (`icon` key: 1..=64 chars of `a-z0-9-`), `scale` > 0 |
  */
-export type MapGeometry = { kind: "pin"; x: number | null; y: number | null };
+export type MapGeometry = { kind: "pin"; x: number; y: number } | { kind: "path"; points: Point[]; closed: boolean } | { kind: "area"; points: Point[] } | { kind: "label"; x: number; y: number; text: string; rotation: number; pathId?: string | null } | { kind: "stamp"; x: number; y: number; icon: string; scale: number; rotation: number };
 
 /**  A map row plus its background asset (if one has been set). */
 export type MapInfo = {
@@ -468,6 +522,8 @@ export type MapInfo = {
 	width: number,
 	height: number,
 	background: Asset | null,
+	/**  Look of a blank map; `None` for maps that use (or wait for) an image. */
+	backgroundStyle: MapBackground | null,
 };
 
 export type MapLayer = {
@@ -476,13 +532,21 @@ export type MapLayer = {
 	name: string,
 	sortOrder: number,
 	visible: boolean,
+	/**  A locked layer rejects creating, changing and deleting its objects. */
+	locked: boolean,
 };
 
 export type MapObject = {
 	id: string,
 	layerId: string,
 	geometry: MapGeometry,
-	/**  Free-form style object (colour, size...). `{}` by default. */
+	/**
+	 *  Free-form JSON object (max 4 KB), `{}` by default. Keys the frontend
+	 *  uses (all optional): `stroke` (#hex), `strokeWidth` (px), `dash`
+	 *  (number[]), `smoothing` (0..1 curve tension), `fill` (#hex),
+	 *  `fillOpacity` (0..1), `fillPattern` ("none" | "hatch" | "dots"),
+	 *  `fontSize`, `fontFamily`, `color` (#hex, text colour).
+	 */
 	style: { [key in string]: unknown },
 	/**  The linked entity, or `None` for an unlinked pin. */
 	entityId: string | null,
@@ -506,6 +570,28 @@ export type MapObjectPatch = {
 	style: { [key in string]: unknown } | null,
 	entityId: string | null,
 	unlinkEntity?: boolean,
+	/**  Move the object to another layer of the same map (must not be locked). */
+	layerId?: string | null,
+};
+
+/**
+ *  One step of an atomic batch for `apply_map_ops`. Serialised with an `op`
+ *  field: `{ "op": "create", "object": {...} }`, `{ "op": "update", "id": ..,
+ *  "patch": {...} }` or `{ "op": "delete", "id": .. }`.
+ */
+export type MapOp = { op: "create"; object: NewMapObject } | { op: "update"; id: string; patch: MapObjectPatch } | { op: "delete"; id: string };
+
+/**  What `apply_map_ops` changed, in their final state. */
+export type MapOpsResult = {
+	/**  Objects created or updated by the batch that still exist afterwards. */
+	objects: MapObject[],
+	/**  Ids removed by `delete` ops. */
+	deletedIds: string[],
+	/**
+	 *  Labels that were detached from a deleted path as a side effect
+	 *  (`pathId` is now null). To undo, restore `pathId` on these.
+	 */
+	detached: MapObject[],
 };
 
 /**  One month of the year. */
@@ -526,11 +612,34 @@ export type NewEntity = {
  *  geometry variant, so it cannot disagree with it.
  */
 export type NewMapObject = {
+	/**
+	 *  Optional client-chosen UUID. Undo/redo uses it to recreate an object
+	 *  with the SAME id (so labels, links etc. stay valid). Rejected if an
+	 *  object with that id already exists. `None` = the server generates one.
+	 */
+	id?: string | null,
 	layerId: string,
 	geometry: MapGeometry,
 	/**  Defaults to `{}` when omitted. */
 	style: { [key in string]: unknown } | null,
 	entityId: string | null,
+	/**
+	 *  Optional RFC 3339 creation time. Objects are drawn in creation order
+	 *  within a layer, so undoing a delete passes the original value to
+	 *  restore the stacking order.
+	 */
+	createdAt?: string | null,
+};
+
+/**
+ *  A point in map pixels (origin top-left). `#[specta(type = Number)]`
+ *  makes the generated TypeScript say `number` instead of `number | null`
+ *  (specta otherwise allows `null` because a Rust `f64` could be NaN, which
+ *  JSON writes as `null`; we reject non-finite values anyway).
+ */
+export type Point = {
+	x: number,
+	y: number,
 };
 
 /**  One row of the "recent worlds" list on the welcome screen. */
