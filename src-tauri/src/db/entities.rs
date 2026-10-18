@@ -76,6 +76,13 @@ pub fn list(conn: &Connection, entity_type: Option<&str>) -> AppResult<Vec<Entit
     Ok(items)
 }
 
+/// Every entity with all columns, sorted by type then name (used by the export).
+pub fn list_all(conn: &Connection) -> AppResult<Vec<Entity>> {
+    let mut stmt = conn.prepare("SELECT * FROM entities ORDER BY type, name COLLATE NOCASE, id")?;
+    let rows = stmt.query_map([], map_entity)?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
 /// Overwrites name, summary, properties and updated_at of an existing row.
 pub fn update(conn: &Connection, entity: &Entity) -> AppResult<()> {
     let changed = conn.execute(

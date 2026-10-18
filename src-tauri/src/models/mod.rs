@@ -10,6 +10,7 @@ pub mod document;
 pub mod entity;
 pub mod entity_type;
 pub mod event;
+pub mod export;
 pub mod link;
 pub mod map;
 pub mod relationship;

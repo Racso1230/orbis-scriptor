@@ -362,6 +362,11 @@ fn text_with_marks(text: &str, node: &Value, ctx: &Ctx) -> String {
 
 // ---- escaping --------------------------------------------------------------
 
+/// Plain text (such as an entity summary) as safe Markdown paragraph text.
+pub fn plain_paragraph(text: &str) -> String {
+    escape_line_starts(&escape_text(text.trim()))
+}
+
 /// Escapes characters that would be read as Markdown or Obsidian syntax.
 /// (A backslash before any ASCII punctuation is a legal Markdown escape.)
 pub fn escape_text(text: &str) -> String {
