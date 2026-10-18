@@ -17,7 +17,7 @@ use crate::error::{AppError, AppResult};
 use crate::models::entity::{EntityPatch, NewEntity};
 use crate::models::map::{Asset, MapGeometry, NewMapObject};
 use crate::services::world::{self, ASSETS_DIR};
-use crate::services::{assets, calendar, documents, entities, events, maps};
+use crate::services::{assets, calendar, documents, entities, events, maps, relationships};
 use crate::state::WorldHandle;
 
 /// Name of the world and of the folder created inside the chosen parent.
@@ -53,6 +53,30 @@ fn entity_seeds() -> Vec<EntitySeed> {
             "Archmage Teodric Vale",
             "Reclusive mage of Highmarch who wants the broken crown for himself.",
             json!({ "species": "Half-elf", "age": 212, "status": "alive" }),
+        ),
+        (
+            "character",
+            "King Aldous Varn",
+            "Isolde's father, who fell in the last battle of the Tide War.",
+            json!({ "species": "Human", "age": 63, "status": "dead" }),
+        ),
+        (
+            "character",
+            "Lady Seren Varn",
+            "Isolde's younger sister, a quiet scholar at court.",
+            json!({ "species": "Human", "age": 29, "status": "alive" }),
+        ),
+        (
+            "character",
+            "Lucan Dorne",
+            "The Queen's husband, a diplomat from the Northern Reach.",
+            json!({ "species": "Human", "age": 36, "status": "alive" }),
+        ),
+        (
+            "character",
+            "Prince Corwin Varn",
+            "Isolde and Lucan's young son and heir.",
+            json!({ "species": "Human", "age": 8, "status": "alive" }),
         ),
         (
             "faction",
@@ -107,6 +131,60 @@ fn entity_seeds() -> Vec<EntitySeed> {
             "Campaign hooks",
             "Loose ideas for a first adventure on the coast.",
             json!({}),
+        ),
+    ]
+}
+
+/// (source name, kind, target name, custom label). Read each row as
+/// "source <kind> target", e.g. Aldous *parent of* Isolde.
+type RelationshipSeed = (
+    &'static str,
+    &'static str,
+    &'static str,
+    Option<&'static str>,
+);
+
+fn relationship_seeds() -> Vec<RelationshipSeed> {
+    vec![
+        // The royal family.
+        ("King Aldous Varn", "parent_of", "Queen Isolde Varn", None),
+        ("King Aldous Varn", "parent_of", "Lady Seren Varn", None),
+        ("Queen Isolde Varn", "sibling_of", "Lady Seren Varn", None),
+        ("Lucan Dorne", "spouse_of", "Queen Isolde Varn", None),
+        ("Queen Isolde Varn", "parent_of", "Prince Corwin Varn", None),
+        ("Lucan Dorne", "parent_of", "Prince Corwin Varn", None),
+        (
+            "Captain Joren Hale",
+            "mentor_of",
+            "Prince Corwin Varn",
+            None,
+        ),
+        // Factions.
+        ("Queen Isolde Varn", "leader_of", "House Varn", None),
+        ("King Aldous Varn", "member_of", "House Varn", None),
+        ("Lady Seren Varn", "member_of", "House Varn", None),
+        ("Captain Joren Hale", "leader_of", "The Tidewardens", None),
+        ("House Varn", "ally_of", "The Tidewardens", None),
+        ("Queen Isolde Varn", "ally_of", "Captain Joren Hale", None),
+        (
+            "Archmage Teodric Vale",
+            "enemy_of",
+            "Queen Isolde Varn",
+            None,
+        ),
+        // Places.
+        ("Queen Isolde Varn", "rules", "Port Veyra", None),
+        ("Archmage Teodric Vale", "rules", "Highmarch Citadel", None),
+        ("Whisperwood", "located_in", "The Ember Spine", None),
+        ("The Tidewardens", "located_in", "Port Veyra", None),
+        // Items.
+        ("House Varn", "owns", "The Shattered Crown", None),
+        ("The Shattered Crown", "located_in", "Port Veyra", None),
+        (
+            "Archmage Teodric Vale",
+            "custom",
+            "The Shattered Crown",
+            Some("covets"),
         ),
     ]
 }
@@ -370,6 +448,21 @@ pub fn populate(conn: &Connection, assets_dir: &Path) -> AppResult<()> {
         )?;
     }
 
+    // Relationships between the entities above (by name).
+    for (source, kind, target, label) in relationship_seeds() {
+        let find = |name: &str| {
+            ids.get(name)
+                .ok_or_else(|| AppError::Internal(format!("unknown relationship entity {name}")))
+        };
+        relationships::create(
+            conn,
+            find(source)?,
+            find(target)?,
+            kind,
+            label.map(Into::into),
+        )?;
+    }
+
     // Events: dates become day numbers through the default calendar.
     let cal = calendar::get_default(conn)?.definition;
     let day = |(year, month, d): Ymd| calendar::from_date(&cal, 0, year, month, d);
@@ -432,7 +525,7 @@ pub fn create(parent: &Path) -> AppResult<WorldHandle> {
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::services::{links, search};
+    use crate::services::{graph, links, search};
 
     fn sample() -> (tempfile::TempDir, WorldHandle) {
         let dir = tempfile::tempdir().unwrap();
@@ -456,7 +549,7 @@ mod tests {
         assert!(dir.path().join(SAMPLE_NAME).join("world.json").exists());
 
         let count = |t: &str| entities::list(&w.conn, Some(t)).unwrap().len();
-        assert_eq!(count("character"), 3);
+        assert_eq!(count("character"), 7);
         assert_eq!(count("location"), 5);
         assert_eq!(count("faction"), 2);
         assert_eq!(count("item"), 1);
@@ -508,6 +601,40 @@ mod tests {
         assert!(coronation.end_day.is_none());
         let who = events::list_involved(&w.conn, &war.entity_id).unwrap();
         assert!(who.iter().any(|e| e.name == "Captain Joren Hale"));
+    }
+
+    #[test]
+    fn has_relationships_for_the_graph() {
+        let (_dir, w) = sample();
+        let isolde = id_of(&w.conn, "Queen Isolde Varn");
+        let rels = relationships::list_for_entity(&w.conn, &isolde).unwrap();
+        let has = |label: &str, other: &str| {
+            rels.iter()
+                .any(|r| r.label == label && r.other_name == other)
+        };
+        assert!(has("child of", "King Aldous Varn"));
+        assert!(has("spouse of", "Lucan Dorne"));
+        assert!(has("parent of", "Prince Corwin Varn"));
+        assert!(has("leader of", "House Varn"));
+        assert!(has("enemy of", "Archmage Teodric Vale"));
+
+        // The graph and the family tree see them too.
+        let g = graph::get_entity_graph(&w.conn, &isolde, 2, &Default::default()).unwrap();
+        assert!(g.nodes.len() >= 8 && !g.truncated);
+        let tree = graph::get_family_tree(&w.conn, &isolde, None, None).unwrap();
+        let gen_of = |n: &str| tree.nodes.iter().find(|x| x.name == n).unwrap().generation;
+        assert_eq!(gen_of("King Aldous Varn"), -1);
+        assert_eq!(gen_of("Lady Seren Varn"), 0);
+        assert_eq!(gen_of("Lucan Dorne"), 0);
+        assert_eq!(gen_of("Prince Corwin Varn"), 1);
+        // Mentions from the lore are still there next to the relationships.
+        let port = id_of(&w.conn, "Port Veyra");
+        assert!(
+            links::backlinks(&w.conn, &port, "Port Veyra")
+                .unwrap()
+                .len()
+                >= 4
+        );
     }
 
     #[test]
