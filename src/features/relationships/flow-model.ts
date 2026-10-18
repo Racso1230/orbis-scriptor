@@ -34,7 +34,7 @@ export function toFlowNodes(
 }
 
 /** Kinds drawn dashed because they are weak links, not real relationships. */
-const WEAK_KINDS = new Set(["mention", "involved_in"]);
+const WEAK_KINDS = new Set(["mention", "involved_in", "field_ref"]);
 
 export interface EdgeOptions {
   /** Draw the relationship text on every edge (false: only on `hoveredId`). */
@@ -121,12 +121,15 @@ export function layoutKey(nodes: { id: string; position: Position }[]): string {
 /** The weak link kinds the filter can opt into. */
 export const MENTION_KIND = "mention";
 export const INVOLVED_KIND = "involved_in";
+export const FIELD_REF_KIND = "field_ref";
 
 export interface FilterSelection {
   hiddenKinds: string[];
   hiddenTypes: string[];
   includeMentions: boolean;
   includeInvolved: boolean;
+  /** Links made by entity-reference fields. */
+  includeFieldRefs: boolean;
 }
 
 /**
@@ -145,6 +148,7 @@ export function buildFilter(
   const extras = [
     ...(sel.includeMentions ? [MENTION_KIND] : []),
     ...(sel.includeInvolved ? [INVOLVED_KIND] : []),
+    ...(sel.includeFieldRefs ? [FIELD_REF_KIND] : []),
   ];
   const allKindsVisible = visibleKinds.length === relationshipKinds.length;
   const visibleTypes = entityTypeKeys.filter((t) => !sel.hiddenTypes.includes(t));

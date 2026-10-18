@@ -12,6 +12,7 @@ interface GraphState {
   hiddenTypes: string[];
   includeMentions: boolean;
   includeInvolved: boolean;
+  includeFieldRefs: boolean;
   /** Focus an entity; remembers the previous focus unless `remember` is false. */
   setFocus: (id: string, remember?: boolean) => void;
   back: () => void;
@@ -21,6 +22,7 @@ interface GraphState {
   toggleType: (key: string, visible: boolean) => void;
   setIncludeMentions: (on: boolean) => void;
   setIncludeInvolved: (on: boolean) => void;
+  setIncludeFieldRefs: (on: boolean) => void;
 }
 
 const without = (list: string[], keys: string[]) => list.filter((k) => !keys.includes(k));
@@ -34,6 +36,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
   hiddenTypes: [],
   includeMentions: false,
   includeInvolved: false,
+  includeFieldRefs: false,
 
   setFocus: (id, remember = true) => {
     const { focusId, history } = get();
@@ -65,4 +68,5 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     })),
   setIncludeMentions: (includeMentions) => set({ includeMentions }),
   setIncludeInvolved: (includeInvolved) => set({ includeInvolved }),
+  setIncludeFieldRefs: (includeFieldRefs) => set({ includeFieldRefs }),
 }));

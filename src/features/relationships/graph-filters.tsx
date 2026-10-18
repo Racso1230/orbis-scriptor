@@ -33,10 +33,12 @@ export function GraphFilters({
   const hiddenTypes = useGraphStore((s) => s.hiddenTypes);
   const includeMentions = useGraphStore((s) => s.includeMentions);
   const includeInvolved = useGraphStore((s) => s.includeInvolved);
+  const includeFieldRefs = useGraphStore((s) => s.includeFieldRefs);
   const toggleKinds = useGraphStore((s) => s.toggleKinds);
   const toggleType = useGraphStore((s) => s.toggleType);
   const setIncludeMentions = useGraphStore((s) => s.setIncludeMentions);
   const setIncludeInvolved = useGraphStore((s) => s.setIncludeInvolved);
+  const setIncludeFieldRefs = useGraphStore((s) => s.setIncludeFieldRefs);
 
   return (
     <div
@@ -93,6 +95,11 @@ export function GraphFilters({
         </h2>
         <Check label="Mentions in lore" checked={includeMentions} onChange={setIncludeMentions} />
         <Check label="Involved in events" checked={includeInvolved} onChange={setIncludeInvolved} />
+        <Check
+          label="Entity reference fields"
+          checked={includeFieldRefs}
+          onChange={setIncludeFieldRefs}
+        />
       </div>
     </div>
   );

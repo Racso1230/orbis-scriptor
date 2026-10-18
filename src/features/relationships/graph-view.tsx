@@ -42,6 +42,7 @@ function GraphCanvas() {
   const { focusId, depth, mode, history, hiddenKinds, hiddenTypes, includeMentions } =
     useGraphStore();
   const includeInvolved = useGraphStore((s) => s.includeInvolved);
+  const includeFieldRefs = useGraphStore((s) => s.includeFieldRefs);
   const setFocus = useGraphStore((s) => s.setFocus);
   const setDepth = useGraphStore((s) => s.setDepth);
   const setMode = useGraphStore((s) => s.setMode);
@@ -69,9 +70,18 @@ function GraphCanvas() {
           hiddenTypes,
           includeMentions,
           includeInvolved,
+          includeFieldRefs,
         },
       ),
-    [kinds.data, types.data, hiddenKinds, hiddenTypes, includeMentions, includeInvolved],
+    [
+      kinds.data,
+      types.data,
+      hiddenKinds,
+      hiddenTypes,
+      includeMentions,
+      includeInvolved,
+      includeFieldRefs,
+    ],
   );
 
   const graphQuery = useEntityGraph(

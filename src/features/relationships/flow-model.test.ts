@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import { buildFilter, toFamilyEdges, toFlowEdges } from "./flow-model";
 import { edge, KINDS } from "./test-fixtures";
 
-const base = { hiddenKinds: [], hiddenTypes: [], includeMentions: false, includeInvolved: false };
+const base = {
+  hiddenKinds: [],
+  hiddenTypes: [],
+  includeMentions: false,
+  includeInvolved: false,
+  includeFieldRefs: false,
+};
 const types = ["character", "faction", "location"];
 
 describe("buildFilter", () => {
@@ -32,6 +38,13 @@ describe("buildFilter", () => {
     expect(f.kinds).toContain("mention");
     expect(f.kinds).toContain("parent_of");
     expect(f.kinds).not.toContain("involved_in");
+  });
+
+  it("opts into field_ref links explicitly", () => {
+    expect(buildFilter(KINDS, types, base).kinds).toBeNull();
+    const f = buildFilter(KINDS, types, { ...base, includeFieldRefs: true });
+    expect(f.kinds).toContain("field_ref");
+    expect(f.kinds).toContain("parent_of");
   });
 
   it("sends an empty list when every kind is hidden", () => {
