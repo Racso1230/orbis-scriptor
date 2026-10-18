@@ -10,6 +10,7 @@ pub mod links;
 pub mod maps;
 pub mod migrations;
 pub mod search;
+pub mod tags;
 pub mod world_settings;
 
 use std::path::Path;

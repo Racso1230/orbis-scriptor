@@ -4,6 +4,7 @@
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde_json::Value;
 
+use crate::db::tags;
 use crate::error::{AppError, AppResult};
 use crate::models::entity::{Entity, EntitySummary};
 
@@ -21,22 +22,57 @@ fn map_entity(row: &Row<'_>) -> rusqlite::Result<Entity> {
         properties: serde_json::from_str(&properties).unwrap_or(Value::Object(Default::default())),
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
+        favorite: row.get::<_, i64>("favorite")? != 0,
+        // Filled in by `get` / `list_all` from the `entity_tags` table.
+        tags: Vec::new(),
+        portrait: None,
+    })
+}
+
+/// Columns every summary query selects, in the order `map_summary_at` reads.
+pub const SUMMARY_COLUMNS: &str = "id, type, name, updated_at, favorite";
+
+/// Maps the five [`SUMMARY_COLUMNS`] starting at column `first`. `tags` and
+/// `portrait` are attached afterwards by [`attach_tags`] and the service.
+pub fn map_summary_at(row: &Row<'_>, first: usize) -> rusqlite::Result<EntitySummary> {
+    Ok(EntitySummary {
+        id: row.get(first)?,
+        entity_type: row.get(first + 1)?,
+        name: row.get(first + 2)?,
+        updated_at: row.get(first + 3)?,
+        favorite: row.get::<_, i64>(first + 4)? != 0,
+        tags: Vec::new(),
+        portrait: None,
     })
 }
 
 fn map_summary(row: &Row<'_>) -> rusqlite::Result<EntitySummary> {
-    Ok(EntitySummary {
-        id: row.get("id")?,
-        entity_type: row.get("type")?,
-        name: row.get("name")?,
-        updated_at: row.get("updated_at")?,
-    })
+    map_summary_at(row, 0)
+}
+
+/// Fills in `tags` for a list of summaries with ONE batched query
+/// (instead of one query per entity).
+pub fn attach_tags(conn: &Connection, summaries: &mut [EntitySummary]) -> AppResult<()> {
+    if summaries.is_empty() {
+        return Ok(());
+    }
+    // For long lists, reading every tag row is cheaper than many `IN` chunks.
+    let mut names = if summaries.len() > IN_CHUNK {
+        tags::names_for_all(conn)?
+    } else {
+        let ids: Vec<String> = summaries.iter().map(|s| s.id.clone()).collect();
+        tags::names_for_ids(conn, &ids)?
+    };
+    for s in summaries.iter_mut() {
+        s.tags = names.remove(&s.id).unwrap_or_default();
+    }
+    Ok(())
 }
 
 pub fn insert(conn: &Connection, entity: &Entity) -> AppResult<()> {
     conn.execute(
-        "INSERT INTO entities (id, type, name, summary, properties, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "INSERT INTO entities (id, type, name, summary, properties, created_at, updated_at, favorite)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
             entity.id,
             entity.entity_type,
@@ -45,6 +81,7 @@ pub fn insert(conn: &Connection, entity: &Entity) -> AppResult<()> {
             entity.properties.to_string(),
             entity.created_at,
             entity.updated_at,
+            entity.favorite,
         ],
     )?;
     Ok(())
@@ -60,27 +97,88 @@ pub fn get(conn: &Connection, id: &str) -> AppResult<Option<Entity>> {
             map_entity,
         )
         .optional()?;
-    Ok(entity)
+    // Tags live in another table: one more small query by primary key.
+    Ok(match entity {
+        Some(mut e) => {
+            e.tags = tags::names_for_entity(conn, id)?;
+            Some(e)
+        }
+        None => None,
+    })
 }
 
 /// All entities (optionally of one type), sorted by type then name.
 pub fn list(conn: &Connection, entity_type: Option<&str>) -> AppResult<Vec<EntitySummary>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, type, name, updated_at FROM entities
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {SUMMARY_COLUMNS} FROM entities
          WHERE (?1 IS NULL OR type = ?1)
-         ORDER BY type, name COLLATE NOCASE",
-    )?;
+         ORDER BY type, name COLLATE NOCASE"
+    ))?;
     let rows = stmt.query_map(params![entity_type], map_summary)?;
     // `collect` into `Result<Vec<_>, _>` stops at the first failing row.
-    let items = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut items = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+    attach_tags(conn, &mut items)?;
     Ok(items)
+}
+
+/// Starred entities, sorted by type then name.
+pub fn list_favorites(conn: &Connection) -> AppResult<Vec<EntitySummary>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {SUMMARY_COLUMNS} FROM entities WHERE favorite = 1
+         ORDER BY type, name COLLATE NOCASE"
+    ))?;
+    let mut items = stmt
+        .query_map([], map_summary)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    attach_tags(conn, &mut items)?;
+    Ok(items)
+}
+
+/// The `limit` most recently changed entities, newest first.
+pub fn list_recent(conn: &Connection, limit: u32) -> AppResult<Vec<EntitySummary>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {SUMMARY_COLUMNS} FROM entities
+         ORDER BY updated_at DESC, id DESC LIMIT ?1"
+    ))?;
+    let mut items = stmt
+        .query_map(params![limit], map_summary)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    attach_tags(conn, &mut items)?;
+    Ok(items)
+}
+
+pub fn set_favorite(conn: &Connection, id: &str, favorite: bool) -> AppResult<()> {
+    let changed = conn.execute(
+        "UPDATE entities SET favorite = ?2 WHERE id = ?1",
+        params![id, favorite],
+    )?;
+    if changed == 0 {
+        return Err(AppError::NotFound(format!("Entity {id} does not exist")));
+    }
+    Ok(())
+}
+
+/// Sets `updated_at` only. Called when something that belongs to the entity
+/// (its lore, event dates, tags, images) changes, so "recently edited"
+/// reflects it.
+pub fn touch(conn: &Connection, id: &str, updated_at: &str) -> AppResult<()> {
+    conn.execute(
+        "UPDATE entities SET updated_at = ?2 WHERE id = ?1",
+        params![id, updated_at],
+    )?;
+    Ok(())
 }
 
 /// Every entity with all columns, sorted by type then name (used by the export).
 pub fn list_all(conn: &Connection) -> AppResult<Vec<Entity>> {
     let mut stmt = conn.prepare("SELECT * FROM entities ORDER BY type, name COLLATE NOCASE, id")?;
     let rows = stmt.query_map([], map_entity)?;
-    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    let mut all = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut names = tags::names_for_all(conn)?;
+    for e in &mut all {
+        e.tags = names.remove(&e.id).unwrap_or_default();
+    }
+    Ok(all)
 }
 
 /// Overwrites name, summary, properties and updated_at of an existing row.
@@ -128,7 +226,7 @@ pub fn summaries_by_ids(conn: &Connection, ids: &[String]) -> AppResult<Vec<Enti
     let mut out = Vec::new();
     for chunk in ids.chunks(IN_CHUNK) {
         let sql = format!(
-            "SELECT id, type, name, updated_at FROM entities WHERE id IN ({})",
+            "SELECT {SUMMARY_COLUMNS} FROM entities WHERE id IN ({})",
             placeholders(chunk.len())
         );
         let mut stmt = conn.prepare(&sql)?;
@@ -137,6 +235,7 @@ pub fn summaries_by_ids(conn: &Connection, ids: &[String]) -> AppResult<Vec<Enti
             out.push(row?);
         }
     }
+    attach_tags(conn, &mut out)?;
     Ok(out)
 }
 
@@ -162,6 +261,9 @@ mod tests {
             properties: json!({}),
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: "2026-01-01T00:00:00Z".into(),
+            favorite: false,
+            tags: Vec::new(),
+            portrait: None,
         }
     }
 

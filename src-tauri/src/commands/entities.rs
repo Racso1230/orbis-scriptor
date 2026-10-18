@@ -52,3 +52,29 @@ pub fn update_entity(
 pub fn delete_entity(state: State<'_, AppState>, id: String) -> AppResult<()> {
     state.with_world(|w| entities::delete(&w.conn, &id))
 }
+
+/// Stars (`true`) or un-stars an entity. Not an edit: `updatedAt` stays.
+#[tauri::command]
+#[specta::specta]
+pub fn set_favorite(
+    state: State<'_, AppState>,
+    entity_id: String,
+    favorite: bool,
+) -> AppResult<()> {
+    state.with_world(|w| entities::set_favorite(&w.conn, &entity_id, favorite))
+}
+
+/// Starred entities, sorted by type then name.
+#[tauri::command]
+#[specta::specta]
+pub fn list_favorites(state: State<'_, AppState>) -> AppResult<Vec<EntitySummary>> {
+    state.with_world(|w| entities::list_favorites(&w.conn))
+}
+
+/// The most recently edited entities, newest first (`limit` 1 to 100).
+/// Entity edits, lore saves, event date changes and tag changes count.
+#[tauri::command]
+#[specta::specta]
+pub fn list_recent(state: State<'_, AppState>, limit: u32) -> AppResult<Vec<EntitySummary>> {
+    state.with_world(|w| entities::list_recent(&w.conn, limit))
+}

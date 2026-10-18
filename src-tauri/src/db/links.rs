@@ -155,20 +155,17 @@ pub fn list_sources(
     kind: &str,
 ) -> AppResult<Vec<EntitySummary>> {
     let mut stmt = conn.prepare(
-        "SELECT e.id, e.type, e.name, e.updated_at
+        "SELECT e.id, e.type, e.name, e.updated_at, e.favorite
          FROM links l JOIN entities e ON e.id = l.source_id
          WHERE l.target_id = ?1 AND l.kind = ?2
          ORDER BY e.type, e.name COLLATE NOCASE",
     )?;
     let rows = stmt.query_map(params![target_id, kind], |row| {
-        Ok(EntitySummary {
-            id: row.get(0)?,
-            entity_type: row.get(1)?,
-            name: row.get(2)?,
-            updated_at: row.get(3)?,
-        })
+        crate::db::entities::map_summary_at(row, 0)
     })?;
-    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    let mut items = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+    crate::db::entities::attach_tags(conn, &mut items)?;
+    Ok(items)
 }
 
 // --- Relationships (Phase 9) -------------------------------------------

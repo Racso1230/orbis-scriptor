@@ -23,4 +23,5 @@ pub mod relationships;
 pub mod sample_world;
 pub mod search;
 pub mod settings;
+pub mod tags;
 pub mod world;

@@ -14,4 +14,5 @@ pub mod maps;
 pub mod relationships;
 pub mod search;
 pub mod settings;
+pub mod tags;
 pub mod world;

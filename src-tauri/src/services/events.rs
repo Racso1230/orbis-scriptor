@@ -114,6 +114,12 @@ pub fn update_dates(
     if let Some(id) = calendar_id {
         db::events::set_calendar(conn, entity_id, id)?;
     }
+    // New dates are an edit of the event ("recently edited" list).
+    db::entities::touch(
+        conn,
+        entity_id,
+        &chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+    )?;
     get(conn, entity_id)
 }
 

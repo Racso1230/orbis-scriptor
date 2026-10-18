@@ -59,6 +59,8 @@ pub fn save(
     // only in that the compiler can't stop us nesting transactions.
     let tx = conn.unchecked_transaction()?;
     db::documents::upsert(&tx, &doc)?;
+    // Saving lore is an edit of the entity ("recently edited" list).
+    db::entities::touch(&tx, entity_id, &doc.updated_at)?;
     links::sync_mentions(&tx, entity_id, &parsed)?;
     search::reindex_entity(&tx, entity_id)?;
     tx.commit()?;

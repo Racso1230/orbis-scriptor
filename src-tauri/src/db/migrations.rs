@@ -183,6 +183,58 @@ const MIGRATIONS_SLICE: &[M<'_>] = &[
             fields      TEXT NOT NULL DEFAULT '[]'  -- JSON array of FieldDef
         );",
     ),
+    // 012: tags, favourites, recently edited and image galleries (Phase 13).
+    // - `tags` / `entity_tags`: case-insensitive unique tag names; deleting an
+    //   entity or a tag removes its `entity_tags` rows.
+    // - `entities.favorite` and an index on `updated_at` (the "recent" list).
+    // - `entity_images`: gallery images of an entity (an image is an `assets`
+    //   row). At most ONE image per entity has `is_portrait = 1` (partial
+    //   unique index).
+    // - FTS5 tables cannot gain a column with ALTER TABLE, so the search
+    //   index is dropped, created again with a `tags` column and refilled
+    //   from `entities` + `documents` (no tags exist yet).
+    M::up(
+        "CREATE TABLE tags (
+            id          TEXT PRIMARY KEY,
+            name        TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            color       TEXT,
+            created_at  TEXT NOT NULL
+        );
+        CREATE TABLE entity_tags (
+            entity_id   TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+            tag_id      TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+            PRIMARY KEY (entity_id, tag_id)
+        );
+        CREATE INDEX idx_entity_tags_tag ON entity_tags(tag_id);
+        ALTER TABLE entities ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0;
+        CREATE INDEX idx_entities_updated ON entities(updated_at);
+        CREATE TABLE entity_images (
+            id          TEXT PRIMARY KEY,
+            entity_id   TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+            asset_id    TEXT NOT NULL REFERENCES assets(id),
+            caption     TEXT NOT NULL DEFAULT '',
+            sort_order  INTEGER NOT NULL,
+            is_portrait INTEGER NOT NULL DEFAULT 0,
+            created_at  TEXT NOT NULL
+        );
+        CREATE INDEX idx_entity_images_entity ON entity_images(entity_id, sort_order);
+        CREATE INDEX idx_entity_images_asset ON entity_images(asset_id);
+        CREATE UNIQUE INDEX idx_entity_images_portrait
+            ON entity_images(entity_id) WHERE is_portrait = 1;
+        DROP TABLE search_index;
+        CREATE VIRTUAL TABLE search_index USING fts5(
+            entity_id UNINDEXED,
+            name,
+            summary,
+            tags,
+            body,
+            tokenize = 'unicode61 remove_diacritics 2',
+            prefix = '2 3'
+        );
+        INSERT INTO search_index (entity_id, name, summary, tags, body)
+            SELECT e.id, e.name, e.summary, '', COALESCE(d.plain_text, '')
+            FROM entities e LEFT JOIN documents d ON d.entity_id = e.id;",
+    ),
 ];
 
 pub const MIGRATIONS: Migrations<'_> = Migrations::from_slice(MIGRATIONS_SLICE);

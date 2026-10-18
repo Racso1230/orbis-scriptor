@@ -104,6 +104,9 @@ fn create_with_dates(
         properties: Value::Object(Default::default()),
         created_at: timestamp.clone(),
         updated_at: timestamp,
+        favorite: false,
+        tags: Vec::new(),
+        portrait: None,
     };
     // Row and search-index entry are written together or not at all.
     // `unchecked_transaction` works on a shared `&Connection`.
@@ -168,6 +171,27 @@ pub fn update(conn: &Connection, id: &str, patch: EntityPatch) -> AppResult<Enti
     search::reindex_entity(&tx, &entity.id)?;
     tx.commit()?;
     Ok(entity)
+}
+
+/// Stars or un-stars an entity. This is not an edit: `updated_at` stays.
+pub fn set_favorite(conn: &Connection, id: &str, favorite: bool) -> AppResult<()> {
+    db::entities::set_favorite(conn, id, favorite)
+}
+
+/// Starred entities, sorted by type then name.
+pub fn list_favorites(conn: &Connection) -> AppResult<Vec<EntitySummary>> {
+    db::entities::list_favorites(conn)
+}
+
+/// Largest number of entities `list_recent` returns.
+pub const MAX_RECENT: u32 = 100;
+
+/// The most recently edited entities, newest first (`limit` is clamped to
+/// 1..=100). An entity counts as edited when its name, summary or fields
+/// change, its lore is saved, its event dates change or its tags or gallery
+/// change. Starring, relationships and map pins do not count.
+pub fn list_recent(conn: &Connection, limit: u32) -> AppResult<Vec<EntitySummary>> {
+    db::entities::list_recent(conn, limit.clamp(1, MAX_RECENT))
 }
 
 pub fn delete(conn: &Connection, id: &str) -> AppResult<()> {
@@ -302,6 +326,87 @@ mod tests {
 
         delete(&c, &a.id).unwrap();
         assert!(matches!(get(&c, &a.id), Err(AppError::NotFound(_))));
+    }
+
+    /// Timestamps have millisecond resolution; wait so two edits differ.
+    fn tick() {
+        std::thread::sleep(std::time::Duration::from_millis(3));
+    }
+
+    fn recent_names(c: &Connection, limit: u32) -> Vec<String> {
+        list_recent(c, limit)
+            .unwrap()
+            .into_iter()
+            .map(|e| e.name)
+            .collect()
+    }
+
+    #[test]
+    fn favourites_can_be_set_listed_and_do_not_count_as_edits() {
+        let c = conn();
+        let a = create(&c, new("note", "Alpha")).unwrap();
+        let b = create(&c, new("character", "Beta")).unwrap();
+        assert!(list_favorites(&c).unwrap().is_empty());
+        tick();
+        set_favorite(&c, &b.id, true).unwrap();
+        let favs = list_favorites(&c).unwrap();
+        assert_eq!(favs.len(), 1);
+        assert!(favs[0].favorite);
+        assert_eq!(favs[0].updated_at, b.updated_at);
+        assert!(get(&c, &b.id).unwrap().favorite);
+        assert!(
+            !list(&c, None)
+                .unwrap()
+                .iter()
+                .any(|e| e.id == a.id && e.favorite)
+        );
+        set_favorite(&c, &b.id, false).unwrap();
+        assert!(list_favorites(&c).unwrap().is_empty());
+        assert!(matches!(
+            set_favorite(&c, "missing", true),
+            Err(AppError::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn recent_lists_the_latest_edits_first() {
+        use crate::services::{documents, events};
+        let c = conn();
+        let a = create(&c, new("note", "A")).unwrap();
+        tick();
+        let b = create(&c, new("note", "B")).unwrap();
+        tick();
+        let ev = events::create(&c, "Battle", 5, None).unwrap();
+        tick();
+        assert_eq!(recent_names(&c, 10), vec!["Battle", "B", "A"]);
+
+        // Saving lore counts as an edit of the entity.
+        documents::save(
+            &c,
+            &a.id,
+            r#"{"type":"doc","content":[]}"#.into(),
+            String::new(),
+        )
+        .unwrap();
+        assert_eq!(recent_names(&c, 10), vec!["A", "Battle", "B"]);
+        tick();
+        // So do field/summary edits and event date changes.
+        update(
+            &c,
+            &b.id,
+            EntityPatch {
+                summary: Some("x".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(recent_names(&c, 10)[0], "B");
+        tick();
+        events::update_dates(&c, &ev.entity_id, 6, None, None, None).unwrap();
+        assert_eq!(recent_names(&c, 10), vec!["Battle", "B", "A"]);
+        // The limit applies (and is clamped to at least 1).
+        assert_eq!(recent_names(&c, 2), vec!["Battle", "B"]);
+        assert_eq!(recent_names(&c, 0).len(), 1);
     }
 
     #[test]

@@ -57,6 +57,39 @@ export const commands = {
 	createEntity: (input: NewEntity) => typedError<Entity, AppError>(__TAURI_INVOKE("create_entity", { input })),
 	updateEntity: (id: string, patch: EntityPatch) => typedError<Entity, AppError>(__TAURI_INVOKE("update_entity", { id, patch })),
 	deleteEntity: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("delete_entity", { id })),
+	/**  Stars (`true`) or un-stars an entity. Not an edit: `updatedAt` stays. */
+	setFavorite: (entityId: string, favorite: boolean) => typedError<null, AppError>(__TAURI_INVOKE("set_favorite", { entityId, favorite })),
+	/**  Starred entities, sorted by type then name. */
+	listFavorites: () => typedError<EntitySummary[], AppError>(__TAURI_INVOKE("list_favorites")),
+	/**
+	 *  The most recently edited entities, newest first (`limit` 1 to 100).
+	 *  Entity edits, lore saves, event date changes and tag changes count.
+	 */
+	listRecent: (limit: number) => typedError<EntitySummary[], AppError>(__TAURI_INVOKE("list_recent", { limit })),
+	/**  Every tag with its usage count, sorted by name. */
+	listTags: () => typedError<Tag[], AppError>(__TAURI_INVOKE("list_tags")),
+	/**
+	 *  Replaces the tags of an entity with `names` (missing tags are created,
+	 *  names that differ only in case are one tag). Returns the entity's tag
+	 *  names. Names: 1 to 40 characters of letters, digits, `-`, `_`, spaces
+	 *  and `/` (nested tags such as `places/cities`).
+	 */
+	setEntityTags: (entityId: string, names: string[]) => typedError<string[], AppError>(__TAURI_INVOKE("set_entity_tags", { entityId, names })),
+	/**
+	 *  Renames a tag. If another tag already has the new name (ignoring case)
+	 *  the two are merged into that one. Returns the surviving tag.
+	 */
+	renameTag: (id: string, name: string) => typedError<Tag, AppError>(__TAURI_INVOKE("rename_tag", { id, name })),
+	/**  Deletes a tag; its entities just lose it. */
+	deleteTag: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("delete_tag", { id })),
+	/**  Sets (`#rrggbb`) or clears (`null`) a tag's colour. */
+	setTagColor: (id: string, color: string | null) => typedError<Tag, AppError>(__TAURI_INVOKE("set_tag_color", { id, color })),
+	/**
+	 *  Entities that carry the given tags (matched by name, ignoring case;
+	 *  nested tags count, so `places` also finds `places/cities`), sorted by
+	 *  type then name. `matchAll` = must have every tag, otherwise any one.
+	 */
+	listEntitiesByTag: (names: string[], matchAll: boolean) => typedError<EntitySummary[], AppError>(__TAURI_INVOKE("list_entities_by_tag", { names, matchAll })),
 	/**  The icon names a custom type may use (lucide names). */
 	listTypeIcons: () => __TAURI_INVOKE<string[]>("list_type_icons"),
 	/**
@@ -443,6 +476,15 @@ export type Entity = {
 	properties: { [key in string]: unknown },
 	createdAt: string,
 	updatedAt: string,
+	/**  Starred by the user. */
+	favorite: boolean,
+	/**  Names of the entity's tags, sorted ignoring case. */
+	tags: string[],
+	/**
+	 *  The portrait image. Only filled in by the `get_entity` command (it
+	 *  needs the world folder to build file paths); `None` elsewhere.
+	 */
+	portrait: Portrait | null,
 };
 
 export type EntityGraph = {
@@ -466,6 +508,16 @@ export type EntitySummary = {
 	type: string,
 	name: string,
 	updatedAt: string,
+	favorite: boolean,
+	/**  Names of the entity's tags, sorted ignoring case. */
+	tags: string[],
+	/**
+	 *  The portrait, for avatars. Filled in by the list commands
+	 *  (`list_entities`, `list_favorites`, `list_recent`,
+	 *  `list_entities_by_tag`) and `list_portraits`; `None` in summaries
+	 *  that other commands return (involved entities, graph, ...).
+	 */
+	portrait: Portrait | null,
 };
 
 export type EntityTypeDef = {
@@ -859,6 +911,21 @@ export type Point = {
 	y: number,
 };
 
+/**
+ *  An entity's portrait: where the image file is, ready for the frontend's
+ *  `convertFileSrc(path)`. Use `thumbPath` (when present) for small avatars.
+ */
+export type Portrait = {
+	assetId: string,
+	/**  Absolute path of the image file. */
+	path: string,
+	/**
+	 *  Absolute path of the thumbnail (max 512px), `None` while it is being
+	 *  generated or if that failed.
+	 */
+	thumbPath: string | null,
+};
+
 /**  One row of the "recent worlds" list on the welcome screen. */
 export type RecentWorld = {
 	name: string,
@@ -939,6 +1006,22 @@ export type SearchResult = {
 	 *  trimmed text.
 	 */
 	snippet: string,
+};
+
+/**
+ *  A tag that can be put on any number of entities. Names are unique
+ *  ignoring case and may be nested with `/` (`places/cities`).
+ */
+export type Tag = {
+	id: string,
+	name: string,
+	/**  `#rrggbb`, or `None` for the default look. */
+	color: string | null,
+	/**
+	 *  How many entities carry this exact tag (nested tags are counted
+	 *  under their own name only).
+	 */
+	count: number,
 };
 
 /**  Colour scheme preference. Serialised as `"light"`, `"dark"` or `"system"`. */

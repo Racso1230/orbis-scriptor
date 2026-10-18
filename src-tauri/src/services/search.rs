@@ -12,13 +12,15 @@ use rusqlite::Connection;
 use crate::db;
 use crate::error::AppResult;
 use crate::models::search::SearchResult;
+use crate::services::tags;
 
 /// Upper bound for `limit`, so a buggy caller cannot ask for everything.
 const MAX_LIMIT: u32 = 200;
 
-/// Re-reads the entity (and its document, if any) and rewrites its index row.
-/// Call this inside the transaction of any write that changes name, summary
-/// or lore. If the entity no longer exists, its index row is removed.
+/// Re-reads the entity (and its document and tags, if any) and rewrites its
+/// index row. Call this inside the transaction of any write that changes
+/// name, summary, tags or lore. If the entity no longer exists, its index row
+/// is removed.
 pub fn reindex_entity(conn: &Connection, entity_id: &str) -> AppResult<()> {
     let Some(entity) = db::entities::get(conn, entity_id)? else {
         return db::search::delete(conn, entity_id);
@@ -26,7 +28,16 @@ pub fn reindex_entity(conn: &Connection, entity_id: &str) -> AppResult<()> {
     let body = db::documents::get(conn, entity_id)?
         .map(|d| d.plain_text)
         .unwrap_or_default();
-    db::search::replace(conn, &entity.id, &entity.name, &entity.summary, &body)
+    // `entity.tags` is already sorted; the FTS column is just the names
+    // separated by spaces ("places/cities" is split into words by the tokenizer).
+    db::search::replace(
+        conn,
+        &entity.id,
+        &entity.name,
+        &entity.summary,
+        &entity.tags.join(" "),
+        &body,
+    )
 }
 
 pub fn remove_entity(conn: &Connection, entity_id: &str) -> AppResult<()> {
@@ -54,12 +65,90 @@ pub fn build_match_expression(query: &str) -> Option<String> {
     }
 }
 
-/// Searches names, summaries and lore. Empty queries return no results.
+/// A search box query split into its two kinds of parts.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct ParsedQuery {
+    /// The free text (everything except the `tag:` filters).
+    pub text: String,
+    /// The tag names from `tag:name` / `tag:"name with spaces"` filters.
+    pub tags: Vec<String>,
+}
+
+/// Splits `tag:` filters out of a search query.
+///
+/// Syntax: `tag:royalty`, `tag:places/cities` or, for names with spaces,
+/// `tag:"dark age"`. `tag:` is case-insensitive and only counts at the start
+/// of a word. Every `tag:` filter must match (AND), and a tag also matches
+/// its nested tags (`tag:places` finds `places/cities`). Everything else is
+/// the free text, searched as before. A bare `tag:` is plain text.
+pub fn parse_query(query: &str) -> ParsedQuery {
+    let chars: Vec<char> = query.chars().collect();
+    let mut parsed = ParsedQuery::default();
+    let mut text = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let at_word_start = i == 0 || chars[i - 1].is_whitespace();
+        let is_filter = at_word_start
+            && chars.len() >= i + 4
+            && chars[i..i + 4]
+                .iter()
+                .collect::<String>()
+                .eq_ignore_ascii_case("tag:");
+        if !is_filter {
+            text.push(chars[i]);
+            i += 1;
+            continue;
+        }
+        let mut j = i + 4;
+        let mut name = String::new();
+        if chars.get(j) == Some(&'"') {
+            j += 1;
+            while j < chars.len() && chars[j] != '"' {
+                name.push(chars[j]);
+                j += 1;
+            }
+            j += 1; // the closing quote (or past the end)
+        } else {
+            while j < chars.len() && !chars[j].is_whitespace() {
+                name.push(chars[j]);
+                j += 1;
+            }
+        }
+        if name.trim().trim_start_matches('#').is_empty() {
+            // Nothing after "tag:": keep it as ordinary text.
+            text.extend(&chars[i..j.min(chars.len())]);
+        } else {
+            parsed.tags.push(name);
+            text.push(' ');
+        }
+        i = j;
+    }
+    parsed.text = text;
+    parsed
+}
+
+/// Searches names, summaries, tags and lore. `tag:` filters (see
+/// [`parse_query`]) narrow the results; with only filters the matching
+/// entities are listed by type and name. Empty queries return no results.
 pub fn search(conn: &Connection, query: &str, limit: u32) -> AppResult<Vec<SearchResult>> {
-    let Some(expr) = build_match_expression(query) else {
+    let parsed = parse_query(query);
+    let expr = build_match_expression(&parsed.text);
+    if expr.is_none() && parsed.tags.is_empty() {
         return Ok(Vec::new());
-    };
-    db::search::query(conn, &expr, limit.clamp(1, MAX_LIMIT))
+    }
+    let mut groups: Vec<Vec<String>> = Vec::new();
+    if !parsed.tags.is_empty() {
+        let all = db::tags::list(conn)?;
+        for name in &parsed.tags {
+            let group = tags::tag_group(&all, name);
+            if group.is_empty() {
+                // A filter for a tag that does not exist matches nothing.
+                return Ok(Vec::new());
+            }
+            groups.push(group);
+        }
+    }
+    db::search::query(conn, expr.as_deref(), &groups, limit.clamp(1, MAX_LIMIT))
 }
 
 /// Clears and repopulates the whole index in one transaction.
@@ -77,7 +166,7 @@ mod tests {
     use crate::db::migrations::MIGRATIONS;
     use crate::models::entity::{EntityPatch, NewEntity};
     use crate::models::search::{HIGHLIGHT_END, HIGHLIGHT_START};
-    use crate::services::{documents, entities};
+    use crate::services::{documents, entities, tags};
 
     fn conn() -> Connection {
         let mut c = Connection::open_in_memory().unwrap();
@@ -260,6 +349,118 @@ mod tests {
         rebuild(&c).unwrap();
         assert_eq!(ids(&c, "guild"), vec![id.clone()]);
         assert_eq!(ids(&c, "traders"), vec![id]);
+    }
+
+    fn tag(c: &Connection, id: &str, names: &[&str]) {
+        let names: Vec<String> = names.iter().map(|n| (*n).to_owned()).collect();
+        tags::set_entity_tags(c, id, &names).unwrap();
+    }
+
+    #[test]
+    fn parse_query_splits_tag_filters_from_text() {
+        let p = parse_query("dragon tag:royalty TAG:\"dark age\" lair");
+        assert_eq!(p.tags, vec!["royalty", "dark age"]);
+        assert_eq!(
+            p.text.split_whitespace().collect::<Vec<_>>(),
+            vec!["dragon", "lair"]
+        );
+        // `tag:` only counts at the start of a word; a bare `tag:` is text.
+        assert!(parse_query("notag:x").tags.is_empty());
+        let bare = parse_query("tag: foo");
+        assert!(bare.tags.is_empty());
+        assert!(bare.text.contains("tag:"));
+        assert_eq!(parse_query("tag:places/cities").tags, vec!["places/cities"]);
+        assert_eq!(parse_query("tag:#royal").tags, vec!["#royal"]);
+        assert_eq!(
+            parse_query("tag:\"unclosed name").tags,
+            vec!["unclosed name"]
+        );
+    }
+
+    #[test]
+    fn tag_filter_narrows_text_search_and_alone_lists_by_tag() {
+        let c = conn();
+        let queen = make(&c, "character", "Queen Isolde");
+        let king = make(&c, "character", "King Aldous");
+        let city = make(&c, "location", "Port Veyra");
+        set_lore(&c, &queen, "She rules the coast");
+        set_lore(&c, &king, "He ruled the coast");
+        tag(&c, &queen, &["royalty", "coast"]);
+        tag(&c, &king, &["royalty"]);
+        tag(&c, &city, &["places/cities", "coast"]);
+
+        assert_eq!(ids(&c, "coast").len(), 3); // the tag text itself is searchable
+        assert_eq!(ids(&c, "rule tag:royalty").len(), 2);
+        assert_eq!(ids(&c, "rule tag:royalty tag:coast"), vec![queen.clone()]);
+        // Only filters: everything with the tag, ordered by type then name.
+        assert_eq!(ids(&c, "tag:royalty"), vec![king.clone(), queen.clone()]);
+        // Nested: `places` finds `places/cities`; case does not matter.
+        assert_eq!(ids(&c, "Tag:PLACES"), vec![city.clone()]);
+        assert_eq!(ids(&c, "tag:places/cities veyra"), vec![city]);
+        // Unknown tag: nothing. A filter never errors.
+        assert!(ids(&c, "tag:nope").is_empty());
+        assert!(ids(&c, "queen tag:nope").is_empty());
+        assert!(search(&c, "tag:\"", 5).is_ok());
+        // Tag-only hits show the summary as the snippet.
+        entities::update(
+            &c,
+            &queen,
+            EntityPatch {
+                summary: Some("Young ruler".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let hits = search(&c, "tag:coast", 10).unwrap();
+        assert!(hits.iter().any(|h| h.snippet == "Young ruler"));
+    }
+
+    #[test]
+    fn tags_are_searchable_text_and_follow_renames_and_deletes() {
+        let c = conn();
+        let id = make(&c, "note", "Plain");
+        tag(&c, &id, &["gloomy"]);
+        assert_eq!(ids(&c, "gloomy"), vec![id.clone()]);
+        let t = tags::list(&c).unwrap().remove(0);
+        tags::rename(&c, &t.id, "cheerful").unwrap();
+        assert!(ids(&c, "gloomy").is_empty());
+        assert_eq!(ids(&c, "cheerful"), vec![id.clone()]);
+        tags::delete(&c, &t.id).unwrap();
+        assert!(ids(&c, "cheerful").is_empty());
+        // Rebuilding the index keeps tags.
+        tag(&c, &id, &["places/cities"]);
+        c.execute("DELETE FROM search_index", []).unwrap();
+        rebuild(&c).unwrap();
+        assert_eq!(ids(&c, "cities"), vec![id]);
+    }
+
+    #[test]
+    fn migration_012_recreates_the_index_and_keeps_data() {
+        let mut c = Connection::open_in_memory().unwrap();
+        MIGRATIONS.to_version(&mut c, 11).unwrap();
+        c.execute(
+            "INSERT INTO entities (id, type, name, summary, properties, created_at, updated_at)
+             VALUES ('1', 'note', 'Old Note', 'legacy summary', '{}', 't', 't')",
+            [],
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO documents (entity_id, content, plain_text, updated_at)
+             VALUES ('1', '{}', 'ancient lore', 't')",
+            [],
+        )
+        .unwrap();
+        MIGRATIONS.to_latest(&mut c).unwrap();
+        assert_eq!(ids(&c, "legacy"), vec!["1".to_string()]);
+        assert_eq!(ids(&c, "ancient"), vec!["1".to_string()]);
+        // The new column exists and works.
+        c.pragma_update(None, "foreign_keys", "ON").unwrap();
+        tag(&c, "1", &["royal"]);
+        assert_eq!(ids(&c, "royal"), vec!["1".to_string()]);
+        let favorite: i64 = c
+            .query_row("SELECT favorite FROM entities", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(favorite, 0);
     }
 
     #[test]

@@ -23,9 +23,33 @@ const types: EntityTypeDef[] = [
   },
 ];
 const entities: EntitySummary[] = [
-  { id: "1", type: "character", name: "Ada", updatedAt: "" },
-  { id: "2", type: "location", name: "Adria", updatedAt: "" },
-  { id: "3", type: "character", name: "Brad", updatedAt: "" },
+  {
+    id: "1",
+    type: "character",
+    name: "Ada",
+    updatedAt: "",
+    favorite: false,
+    tags: [],
+    portrait: null,
+  },
+  {
+    id: "2",
+    type: "location",
+    name: "Adria",
+    updatedAt: "",
+    favorite: false,
+    tags: [],
+    portrait: null,
+  },
+  {
+    id: "3",
+    type: "character",
+    name: "Brad",
+    updatedAt: "",
+    favorite: false,
+    tags: [],
+    portrait: null,
+  },
 ];
 
 describe("buildMentionItems", () => {

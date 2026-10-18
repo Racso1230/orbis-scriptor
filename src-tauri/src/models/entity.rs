@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use specta::Type;
 
+use crate::models::gallery::Portrait;
+
 /// A full entity row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -22,6 +24,13 @@ pub struct Entity {
     pub properties: Value,
     pub created_at: String,
     pub updated_at: String,
+    /// Starred by the user.
+    pub favorite: bool,
+    /// Names of the entity's tags, sorted ignoring case.
+    pub tags: Vec<String>,
+    /// The portrait image. Only filled in by the `get_entity` command (it
+    /// needs the world folder to build file paths); `None` elsewhere.
+    pub portrait: Option<Portrait>,
 }
 
 /// The light version used by the sidebar list.
@@ -33,6 +42,14 @@ pub struct EntitySummary {
     pub entity_type: String,
     pub name: String,
     pub updated_at: String,
+    pub favorite: bool,
+    /// Names of the entity's tags, sorted ignoring case.
+    pub tags: Vec<String>,
+    /// The portrait, for avatars. Filled in by the list commands
+    /// (`list_entities`, `list_favorites`, `list_recent`,
+    /// `list_entities_by_tag`) and `list_portraits`; `None` in summaries
+    /// that other commands return (involved entities, graph, ...).
+    pub portrait: Option<Portrait>,
 }
 
 /// Input for `create_entity`.

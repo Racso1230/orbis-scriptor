@@ -81,6 +81,9 @@ pub fn seed(conn: &Connection, count: u32) -> AppResult<u32> {
             properties: json!({}),
             created_at: timestamp.clone(),
             updated_at: timestamp.clone(),
+            favorite: false,
+            tags: Vec::new(),
+            portrait: None,
         };
         db::entities::insert(&tx, &entity)?;
 
@@ -108,7 +111,14 @@ pub fn seed(conn: &Connection, count: u32) -> AppResult<u32> {
                 },
             )?;
         }
-        db::search::replace(&tx, &entity.id, &entity.name, &entity.summary, &plain_text)?;
+        db::search::replace(
+            &tx,
+            &entity.id,
+            &entity.name,
+            &entity.summary,
+            "",
+            &plain_text,
+        )?;
     }
 
     tx.commit()?;
@@ -215,6 +225,9 @@ pub fn seed_events(conn: &Connection, count: u32) -> AppResult<u32> {
             properties: json!({}),
             created_at: timestamp.clone(),
             updated_at: timestamp.clone(),
+            favorite: false,
+            tags: Vec::new(),
+            portrait: None,
         };
         db::entities::insert(&tx, &entity)?;
 
@@ -223,7 +236,7 @@ pub fn seed_events(conn: &Connection, count: u32) -> AppResult<u32> {
         let end = (rng.next(3) == 0).then(|| start + 1 + rng.next(5000) as i64);
         let importance = 1 + rng.next(5) as i32;
         db::events::insert(&tx, &entity.id, &calendar.id, start, end, importance)?;
-        db::search::replace(&tx, &entity.id, &entity.name, &entity.summary, "")?;
+        db::search::replace(&tx, &entity.id, &entity.name, &entity.summary, "", "")?;
 
         if !characters.is_empty() {
             for _ in 0..rng.next(4) {

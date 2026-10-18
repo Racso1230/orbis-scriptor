@@ -422,6 +422,8 @@ fn render_note(ctx: &RenderCtx, entry: &Entry) -> AppResult<(String, Option<Asse
     if !e.summary.trim().is_empty() {
         front.string("summary", e.summary.trim());
     }
+    // Tags (nested ones keep their `/`, which Obsidian understands).
+    front.list("tags", &e.tags);
     front.string("created", &e.created_at);
     front.string("updated", &e.updated_at);
     if let Some(def) = type_def {

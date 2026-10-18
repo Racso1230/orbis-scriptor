@@ -16,6 +16,9 @@ const entity = (id: string, t: string, name: string): EntitySummary => ({
   type: t,
   name,
   updatedAt: "",
+  favorite: false,
+  tags: [],
+  portrait: null,
 });
 
 const types = [type("character", "Characters"), type("location", "Locations")];
