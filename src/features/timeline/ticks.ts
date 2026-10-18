@@ -1,5 +1,14 @@
 import type { CalendarDefinition } from "@/lib/bindings";
-import { daysPerYear, floorDiv, euclidMod, formatDate, monthStartOffset, toDate } from "./calendar";
+import {
+  daysBeforeYear,
+  daysPerYear,
+  euclidMod,
+  formatDate,
+  startOfMonth,
+  startOfYear,
+  toDate,
+  yearIndexOfDay,
+} from "./calendar";
 
 export interface Tick {
   day: number;
@@ -14,7 +23,7 @@ type UnitKind = "day" | "month" | "year";
 export interface TickUnit {
   kind: UnitKind;
   step: number;
-  /** Approximate length in days (months vary, so this is an average). */
+  /** Approximate length in days (months and leap years vary, so this is an average). */
   span: number;
 }
 
@@ -30,9 +39,17 @@ const MONTH_STEPS = [1, 2, 3, 6];
 // 1, 2, 5, 10, 20, 50, ... 5,000,000 years: covers decade / century / millennium scales.
 const YEAR_STEPS = Array.from({ length: 7 }, (_, e) => [1, 2, 5].map((m) => m * 10 ** e)).flat();
 
+/** Mean year length in days, leap days included (measured over a long stretch of years). */
+function averageYearLength(def: CalendarDefinition): number {
+  const base = daysPerYear(def);
+  if (!def.leap || base <= 0) return base;
+  const sample = 10000;
+  return daysBeforeYear(def, sample) / sample;
+}
+
 /** All candidate units for a calendar, shortest first. */
 export function tickUnits(def: CalendarDefinition): TickUnit[] {
-  const year = daysPerYear(def);
+  const year = averageYearLength(def);
   const avgMonth = year / Math.max(1, def.months.length);
   const units: TickUnit[] = [
     ...DAY_STEPS.map((step) => ({ kind: "day" as const, step, span: step })),
@@ -56,9 +73,12 @@ export function chooseUnitIndex(
   return i === -1 ? units.length - 1 : i;
 }
 
-/** Days (not yet labelled) at which `unit` has a boundary within `[from, to]`. */
+/**
+ * Days (not yet labelled) at which `unit` has a boundary within `[from, to]`.
+ * Years and months are real calendar boundaries, so leap days and uneven year
+ * lengths are respected; the range is padded by a year on each side.
+ */
 function unitDays(def: CalendarDefinition, unit: TickUnit, from: number, to: number): number[] {
-  const yearLength = daysPerYear(def);
   const days: number[] = [];
 
   if (unit.kind === "day") {
@@ -69,17 +89,17 @@ function unitDays(def: CalendarDefinition, unit: TickUnit, from: number, to: num
     return days;
   }
 
-  const firstYear = floorDiv(from, yearLength) - 1;
-  const lastYear = floorDiv(to, yearLength) + 1;
-  for (let absYear = firstYear; absYear <= lastYear; absYear++) {
-    const yearStart = absYear * yearLength;
+  const firstYear = yearIndexOfDay(def, Math.floor(from)) - 1;
+  const lastYear = yearIndexOfDay(def, Math.ceil(to)) + 1;
+  for (let a = firstYear; a <= lastYear; a++) {
+    const yearStart = startOfYear(def, a);
     if (unit.kind === "year") {
       // Align to the displayed year number (so a 10-year step hits 10, 20, 30...).
       const shown = toDate(def, yearStart).year;
       if (unit.step === 1 || euclidMod(shown, unit.step) === 0) days.push(yearStart);
     } else {
-      for (let m = 0; m < def.months.length; m += 1) {
-        if (m % unit.step === 0) days.push(yearStart + monthStartOffset(def, m));
+      for (let m = 0; m < def.months.length; m += unit.step) {
+        days.push(startOfMonth(def, a, m));
       }
     }
     if (days.length > MAX_TICKS) break;
