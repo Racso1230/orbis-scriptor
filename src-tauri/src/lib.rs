@@ -63,6 +63,14 @@ fn specta_builder() -> Builder<tauri::Wry> {
         commands::events::remove_involved,
         commands::events::list_events_for_entity,
         commands::events::dev_seed_events,
+        commands::relationships::list_relationship_kinds,
+        commands::relationships::list_relationships,
+        commands::relationships::create_relationship,
+        commands::relationships::update_relationship,
+        commands::relationships::delete_relationship,
+        commands::relationships::get_entity_graph,
+        commands::relationships::get_family_tree,
+        commands::relationships::dev_seed_relationships,
     ])
 }
 

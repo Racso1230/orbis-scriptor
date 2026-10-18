@@ -127,6 +127,30 @@ export const commands = {
 	 *  some of them ranges, linked to random characters. Refuses to run in release.
 	 */
 	devSeedEvents: (count: number) => typedError<number, AppError>(__TAURI_INVOKE("dev_seed_events", { count })),
+	/**
+	 *  The built-in relationship catalog (labels, symmetry, categories,
+	 *  type constraints). The frontend renders pickers and filters from this.
+	 */
+	listRelationshipKinds: () => __TAURI_INVOKE<RelationshipKindDef[]>("list_relationship_kinds"),
+	/**  Relationships of one entity, outgoing and incoming, phrased from its side. */
+	listRelationships: (entityId: string) => typedError<RelationshipView[], AppError>(__TAURI_INVOKE("list_relationships", { entityId })),
+	/**  Creates "source <kind> target". `label` is only used by `custom`. */
+	createRelationship: (sourceId: string, targetId: string, kind: string, label: string | null) => typedError<RelationshipRecord, AppError>(__TAURI_INVOKE("create_relationship", { sourceId, targetId, kind, label })),
+	/**  Changes kind, label and/or direction; null fields stay as they are. */
+	updateRelationship: (linkId: string, kind: string | null, label: string | null, swapDirection: boolean | null) => typedError<RelationshipRecord, AppError>(__TAURI_INVOKE("update_relationship", { linkId, kind, label, swapDirection })),
+	deleteRelationship: (linkId: string) => typedError<null, AppError>(__TAURI_INVOKE("delete_relationship", { linkId })),
+	/**  The graph around `focus_id`, `depth` (1-4) links deep. */
+	getEntityGraph: (focusId: string, depth: number, filter: GraphFilter) => typedError<EntityGraph, AppError>(__TAURI_INVOKE("get_entity_graph", { focusId, depth, filter })),
+	/**
+	 *  Family tree around a character; each node has a generation number
+	 *  (negative = ancestors). Both limits default to 3.
+	 */
+	getFamilyTree: (focusId: string, generationsUp: number | null, generationsDown: number | null) => typedError<FamilyTree, AppError>(__TAURI_INVOKE("get_family_tree", { focusId, generationsUp, generationsDown })),
+	/**
+	 *  Development only: creates up to `count` random valid relationships among
+	 *  existing entities. Refuses to run in release builds.
+	 */
+	devSeedRelationships: (count: number) => typedError<number, AppError>(__TAURI_INVOKE("dev_seed_relationships", { count })),
 };
 
 /* Types */
@@ -281,6 +305,14 @@ export type Entity = {
 	updatedAt: string,
 };
 
+export type EntityGraph = {
+	nodes: GraphNode[],
+	/**  Only edges whose both ends are in `nodes`. */
+	edges: GraphEdge[],
+	/**  True when `max_nodes` stopped the search before it was complete. */
+	truncated: boolean,
+};
+
 /**  Input for `update_entity`: only the fields that are `Some` change. */
 export type EntityPatch = {
 	name: string | null,
@@ -331,6 +363,20 @@ export type EventSummary = {
 	calendarId: string,
 };
 
+export type FamilyNode = {
+	id: string,
+	name: string,
+	type: string,
+	/**  0 = the focus's generation, negative = ancestors, positive = descendants. */
+	generation: number,
+};
+
+export type FamilyTree = {
+	nodes: FamilyNode[],
+	edges: GraphEdge[],
+	truncated: boolean,
+};
+
 export type FieldDef = {
 	/**  Key inside the entity's `properties` JSON object. */
 	key: string,
@@ -342,6 +388,39 @@ export type FieldDef = {
 
 /**  How a type-specific field is edited. */
 export type FieldKind = "text" | "number" | "select";
+
+export type GraphEdge = {
+	/**  The `links` row id. */
+	id: string,
+	source: string,
+	target: string,
+	kind: string,
+	/**  Text to draw on the edge, read as "source <label> target". */
+	label: string,
+	symmetric: boolean,
+	category: RelationshipCategory,
+};
+
+/**  Which links `get_entity_graph` follows and which nodes it keeps. */
+export type GraphFilter = {
+	/**
+	 *  Relationship kind keys to follow. `None` = every relationship kind.
+	 *  May also contain `mention` and `involved_in` (excluded by default).
+	 */
+	kinds: string[] | null,
+	/**  Entity types to keep. `None` = all. The focus node is always kept. */
+	entityTypes: string[] | null,
+	/**  Node cap: default 200, at most 500. */
+	maxNodes: number | null,
+};
+
+export type GraphNode = {
+	id: string,
+	name: string,
+	type: string,
+	/**  Distance from the focus node (0 = the focus itself). */
+	degree: number,
+};
 
 /**
  *  A day number or year in command arguments (an integer that fits a JS number).
@@ -462,6 +541,65 @@ export type RecentWorld = {
 	lastOpenedAt: string,
 	/**  False when the folder (or its `world.json`) no longer exists. */
 	available: boolean,
+};
+
+/**
+ *  Used to group and filter kinds in the UI.
+ * 
+ *  An `enum` is a type that is exactly one of a fixed set of variants.
+ *  `match` on it must handle every variant, so the compiler tells us when
+ *  we forget one.
+ */
+export type RelationshipCategory = "family" | "social" | "political" | "place" | "ownership" | "other";
+
+/**  One entry of the relationship catalog, as sent to the frontend. */
+export type RelationshipKindDef = {
+	/**  Stored in `links.kind`, e.g. `parent_of`. */
+	key: string,
+	/**  Reads "source <forward_label> target", e.g. "parent of". */
+	forwardLabel: string,
+	/**  Reads "target <inverse_label> source", e.g. "child of". */
+	inverseLabel: string,
+	/**  Symmetric kinds (spouse, ally...) mean the same in both directions. */
+	symmetric: boolean,
+	category: RelationshipCategory,
+	/**  Allowed entity types for the source; empty means any type. */
+	sourceTypes: string[],
+	/**  Allowed entity types for the target; empty means any type. */
+	targetTypes: string[],
+	/**  True only for `custom`: the user supplies the label text. */
+	needsLabel: boolean,
+};
+
+/**  A stored relationship row, as returned by create/update. */
+export type RelationshipRecord = {
+	id: string,
+	sourceId: string,
+	targetId: string,
+	kind: string,
+	/**  Only set for `custom` relationships. */
+	label: string | null,
+};
+
+/**
+ *  A relationship phrased from the point of view of one entity
+ *  ("Ada is *child of* Bran").
+ */
+export type RelationshipView = {
+	linkId: string,
+	kind: string,
+	/**
+	 *  What the viewed entity is to the other one: "child of", "parent of",
+	 *  "spouse of", or the custom text.
+	 */
+	label: string,
+	otherId: string,
+	otherName: string,
+	otherType: string,
+	/**  True when the viewed entity is the stored `source`. */
+	outgoing: boolean,
+	symmetric: boolean,
+	category: RelationshipCategory,
 };
 
 /**  One hit from the full-text search, best match first. */

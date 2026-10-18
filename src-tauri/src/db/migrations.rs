@@ -140,6 +140,10 @@ const MIGRATIONS_SLICE: &[M<'_>] = &[
             1
         );"#,
     ),
+    // 008: relationships (Phase 9) reuse `links`; this index speeds up the
+    // graph queries that filter by kind. Lookups by source are already served
+    // by the index behind UNIQUE (source_id, target_id, kind).
+    M::up("CREATE INDEX idx_links_kind ON links(kind);"),
 ];
 
 pub const MIGRATIONS: Migrations<'_> = Migrations::from_slice(MIGRATIONS_SLICE);

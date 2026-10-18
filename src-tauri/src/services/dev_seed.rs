@@ -235,6 +235,56 @@ pub fn seed_events(conn: &Connection, count: u32) -> AppResult<u32> {
     Ok(count)
 }
 
+/// Creates up to `count` random relationships among existing entities, for
+/// graph performance tests. Each attempt picks a random catalog kind and
+/// random entities of the allowed types; attempts that the rules reject
+/// (duplicate, self-link) are simply skipped, so the result can be slightly
+/// below `count`. Returns how many were created.
+pub fn seed_relationships(conn: &Connection, count: u32) -> AppResult<u32> {
+    use crate::models::relationship::{self as catalog, KIND_CUSTOM};
+    use crate::services::relationships;
+
+    // Entity ids grouped by type, for picking valid endpoints.
+    let mut by_type: Vec<(&str, Vec<String>)> = Vec::new();
+    for t in ["character", "location", "faction", "item", "note"] {
+        by_type.push((t, db::maps::entity_ids_of_type(conn, t)?));
+    }
+    let pool = |allowed: &[String]| -> Vec<&String> {
+        by_type
+            .iter()
+            .filter(|(t, _)| allowed.is_empty() || allowed.iter().any(|a| a == t))
+            .flat_map(|(_, ids)| ids.iter())
+            .collect()
+    };
+
+    let kinds = catalog::all();
+    let mut rng = Lcg(Uuid::now_v7().as_u128() as u64);
+    let tx = conn.unchecked_transaction()?;
+    let mut created = 0;
+    // Bounded number of attempts so a tiny world cannot loop forever.
+    for _ in 0..(count as usize).saturating_mul(10) {
+        if created >= count {
+            break;
+        }
+        let kind = &kinds[rng.next(kinds.len())];
+        let (sources, targets) = (pool(&kind.source_types), pool(&kind.target_types));
+        if sources.is_empty() || targets.is_empty() {
+            continue;
+        }
+        let source = sources[rng.next(sources.len())];
+        let target = targets[rng.next(targets.len())];
+        let label = (kind.key == KIND_CUSTOM).then(|| rng.sentence(2));
+        // Rule violations (`Validation`) just mean "try another pair".
+        match relationships::create(&tx, source, target, &kind.key, label) {
+            Ok(_) => created += 1,
+            Err(AppError::Validation(_)) => {}
+            Err(e) => return Err(e),
+        }
+    }
+    tx.commit()?;
+    Ok(created)
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {

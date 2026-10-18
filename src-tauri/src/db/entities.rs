@@ -106,6 +106,33 @@ pub fn delete(conn: &Connection, id: &str) -> AppResult<()> {
     Ok(())
 }
 
+/// Largest number of `?` placeholders used in one `IN (...)` list. SQLite's
+/// own limit is far higher on modern versions, but staying small is safe.
+pub const IN_CHUNK: usize = 300;
+
+/// `?,?,?` with `n` placeholders, for building `IN (...)` lists.
+pub fn placeholders(n: usize) -> String {
+    vec!["?"; n].join(",")
+}
+
+/// The entities with the given ids (unknown ids are skipped). Works in
+/// chunks so a long id list never exceeds SQLite's parameter limit.
+pub fn summaries_by_ids(conn: &Connection, ids: &[String]) -> AppResult<Vec<EntitySummary>> {
+    let mut out = Vec::new();
+    for chunk in ids.chunks(IN_CHUNK) {
+        let sql = format!(
+            "SELECT id, type, name, updated_at FROM entities WHERE id IN ({})",
+            placeholders(chunk.len())
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(chunk.iter()), map_summary)?;
+        for row in rows {
+            out.push(row?);
+        }
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {

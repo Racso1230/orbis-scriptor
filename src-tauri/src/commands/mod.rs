@@ -9,6 +9,7 @@ pub mod entities;
 pub mod events;
 pub mod links;
 pub mod maps;
+pub mod relationships;
 pub mod search;
 pub mod settings;
 pub mod world;

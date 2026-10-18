@@ -12,6 +12,7 @@ pub mod entity_type;
 pub mod event;
 pub mod link;
 pub mod map;
+pub mod relationship;
 pub mod search;
 pub mod settings;
 pub mod world;
