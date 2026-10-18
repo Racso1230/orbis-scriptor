@@ -7,6 +7,7 @@ import {
   type DashPreset,
   type FillPattern,
 } from "./object-style";
+import { pathLength } from "./drawing";
 import { ColorControl, RangeControl, SelectControl } from "./style-controls";
 import type { PropertyEditorProps } from "./property-editor-types";
 
@@ -24,8 +25,14 @@ const PATTERN_OPTIONS: readonly { value: FillPattern; label: string }[] = [
 /** Style fields for paths: colour, width, dash and smoothing. */
 export function PathEditor({ object, disabled, onStyleChange }: PropertyEditorProps) {
   const s = lineStyle(object.style);
+  const g = object.geometry;
   return (
     <div className="flex flex-col gap-2">
+      {g.kind === "path" && (
+        <p className="text-xs text-muted-foreground">
+          {g.points.length} points, {Math.round(pathLength(g.points))} px long
+        </p>
+      )}
       <ColorControl
         label="Line colour"
         value={s.stroke}

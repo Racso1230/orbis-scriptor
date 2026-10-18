@@ -193,3 +193,11 @@ export function useConfigureBlankMap(mapEntityId: string) {
     onSettled: () => queryClient.invalidateQueries({ queryKey: mapKeys.detail(mapEntityId) }),
   });
 }
+
+/** Writes an exported PNG (base64, no `data:` prefix) to `path`. */
+export function useSaveExport() {
+  return useMutation({
+    mutationFn: ({ path, pngBase64 }: { path: string; pngBase64: string }) =>
+      unwrap(commands.saveExport(path, pngBase64)),
+  });
+}

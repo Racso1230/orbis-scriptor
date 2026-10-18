@@ -49,4 +49,16 @@ describe("map tool store", () => {
     s.setTool("path");
     expect(useMapToolStore.getState()).toMatchObject({ tool: "path", pathPreset: "road" });
   });
+
+  it("closes the label text box when the tool changes", () => {
+    const s = useMapToolStore.getState();
+    s.setLabelInput({ mode: "create", x: 1, y: 2, pathId: null, layerId: "l" });
+    s.setTool("stamp");
+    expect(useMapToolStore.getState()).toMatchObject({ tool: "stamp", labelInput: null });
+  });
+
+  it("remembers the chosen stamp", () => {
+    useMapToolStore.getState().setStampIcon("castle");
+    expect(useMapToolStore.getState().stampIcon).toBe("castle");
+  });
 });

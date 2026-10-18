@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Download,
   FlaskConical,
   ImagePlus,
   Maximize,
@@ -13,10 +14,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { useCreateEntity } from "@/features/entities/queries";
 import { useOpenEntity } from "@/features/entities/use-open-entity";
-import type { MapGeometry, MapObject } from "@/lib/bindings";
+import type { MapGeometry, MapLayer, MapObject } from "@/lib/bindings";
 import { cn } from "@/lib/utils";
 import { BlankMapDialog } from "./blank-map-dialog";
 import { EntityPickerDialog } from "./entity-picker-dialog";
+import { ExportDialog } from "./export-dialog";
 import { pinGeometry, translateGeometry, type Point } from "./geometry";
 import { LayersPanel } from "./layers-panel";
 import { canEditObject, resolveActiveLayer } from "./layers";
@@ -27,6 +29,7 @@ import { MapSettingsDialog } from "./map-settings-dialog";
 import { useMapToolStore, type MapTool } from "./map-tool-store";
 import { PATH_PRESETS, type PathPreset } from "./object-style";
 import { PropertiesPanel } from "./properties-panel";
+import { StampPalette } from "./stamp-palette";
 import { pickImageFile, useMap, useSeedMapPins, useSetMapBackground } from "./queries";
 import { isTypingTarget } from "./stage-pointer";
 import { TOOLS, toolForKey, toolById } from "./tool-registry";
@@ -81,6 +84,7 @@ function MapEditor({ mapEntityId }: { mapEntityId: string }) {
   const [pendingPin, setPendingPin] = useState<Point | null>(null);
   const [blankOpen, setBlankOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
 
   const data = map.data;
@@ -179,9 +183,19 @@ function MapEditor({ mapEntityId }: { mapEntityId: string }) {
     },
     [update],
   );
+  // Read through a ref so `openObject` stays stable when layers change.
+  const layersRef = useRef<MapLayer[]>([]);
+  useEffect(() => {
+    layersRef.current = data?.layers ?? [];
+  }, [data?.layers]);
   const openObject = useCallback(
     (object: MapObject) => {
-      if (object.entityId) openEntity(object.entityId);
+      // Double-clicking a label edits its text (if its layer can be edited).
+      if (object.geometry.kind === "label" && canEditObject(object, layersRef.current)) {
+        useMapToolStore.getState().setLabelInput({ mode: "edit", objectId: object.id });
+      } else if (object.entityId) {
+        openEntity(object.entityId);
+      }
     },
     [openEntity],
   );
@@ -306,6 +320,11 @@ function MapEditor({ mapEntityId }: { mapEntityId: string }) {
             </Button>
           )}
           {hasCanvas && (
+            <Button variant="ghost" size="sm" onClick={() => setExportOpen(true)}>
+              <Download /> Export PNG…
+            </Button>
+          )}
+          {hasCanvas && (
             <Button
               variant={panelOpen ? "secondary" : "ghost"}
               size="icon"
@@ -354,10 +373,11 @@ function MapEditor({ mapEntityId }: { mapEntityId: string }) {
           {hasCanvas && objects.length === 0 && (
             <p className="pointer-events-none absolute inset-x-0 bottom-4 text-center text-sm text-muted-foreground">
               <span className="rounded-md bg-background/80 px-3 py-1.5">
-                Nothing drawn yet. Pick a tool: P pin, L path, F freehand, A area.
+                Nothing drawn yet. Pick a tool: P pin, L path, F freehand, A area, T label, S stamp.
               </span>
             </p>
           )}
+          {hasCanvas && tool === "stamp" && <StampPalette />}
           {hasCanvas && tool !== "select" && (
             <p className="pointer-events-none absolute top-2 left-2 rounded-md bg-background/80 px-2 py-1 text-xs text-muted-foreground">
               {toolHint(tool)}
@@ -392,6 +412,13 @@ function MapEditor({ mapEntityId }: { mapEntityId: string }) {
         onPickEntity={placePin}
         onCreateEntity={(type, name) => void createAndPlace(type, name)}
       />
+      <ExportDialog
+        open={exportOpen}
+        onOpenChange={setExportOpen}
+        map={data.map}
+        layers={data.layers}
+        objects={data.objects}
+      />
       <BlankMapDialog
         open={blankOpen}
         onOpenChange={setBlankOpen}
@@ -412,6 +439,10 @@ function toolHint(tool: MapTool): string {
       return "Click to add points. Double-click or Enter to finish, Backspace to undo a point, Esc to cancel";
     case "freehand":
       return "Press and drag to draw. Middle-drag pans";
+    case "label":
+      return "Click the map to add a label. Click on a path to make the text follow it. Enter to save, Esc to cancel";
+    case "stamp":
+      return "Pick a stamp, then click the map to place it. Esc to stop";
     case "area":
       return "Click to add corners. Click the first corner, double-click or Enter to close, Esc to cancel";
     default:

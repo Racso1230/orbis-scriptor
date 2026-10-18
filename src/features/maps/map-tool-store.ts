@@ -2,11 +2,16 @@ import { create } from "zustand";
 import type { PathPreset } from "./object-style";
 import type { Transform } from "./viewport";
 
+/** Tool ids. Each one is registered in `tool-registry.tsx`. */
+export type MapTool = "select" | "pin" | "path" | "freehand" | "area" | "label" | "stamp";
+
 /**
- * Tool ids. Part 3 adds "label" and "stamp" here and registers them in
- * `tool-registry.tsx`.
+ * The inline text box for labels: `create` is a new label about to be placed at
+ * (x, y), optionally following a path; `edit` changes the text of an existing one.
  */
-export type MapTool = "select" | "pin" | "path" | "freehand" | "area";
+export type LabelInput =
+  | { mode: "create"; x: number; y: number; pathId: string | null; layerId: string }
+  | { mode: "edit"; objectId: string };
 
 /** Ask the map view to centre on a pin once it has loaded ("jump to" links). */
 export interface PendingFocus {
@@ -27,6 +32,10 @@ interface MapToolState {
   pathPreset: PathPreset;
   /** Whether the layers / properties side panel is shown. */
   panelOpen: boolean;
+  /** Open label text box, if any. */
+  labelInput: LabelInput | null;
+  /** The stamp (icon key) the Stamp tool places. */
+  stampIcon: string;
   setTool: (tool: MapTool) => void;
   select: (objectId: string | null) => void;
   setPendingFocus: (focus: PendingFocus | null) => void;
@@ -35,6 +44,8 @@ interface MapToolState {
   setActiveLayer: (mapEntityId: string, layerId: string) => void;
   setPathPreset: (preset: PathPreset) => void;
   setPanelOpen: (open: boolean) => void;
+  setLabelInput: (input: LabelInput | null) => void;
+  setStampIcon: (icon: string) => void;
 }
 
 export const useMapToolStore = create<MapToolState>()((set) => ({
@@ -45,8 +56,10 @@ export const useMapToolStore = create<MapToolState>()((set) => ({
   activeLayerIds: {},
   pathPreset: "river",
   panelOpen: true,
+  labelInput: null,
+  stampIcon: "mountain",
   // Switching tool also clears the selection: objects are only edited in Select.
-  setTool: (tool) => set({ tool, selectedObjectId: null }),
+  setTool: (tool) => set({ tool, selectedObjectId: null, labelInput: null }),
   select: (selectedObjectId) => set({ selectedObjectId }),
   setPendingFocus: (pendingFocus) => set({ pendingFocus }),
   saveViewport: (mapEntityId, transform) =>
@@ -61,4 +74,6 @@ export const useMapToolStore = create<MapToolState>()((set) => ({
     set((s) => ({ activeLayerIds: { ...s.activeLayerIds, [mapEntityId]: layerId } })),
   setPathPreset: (pathPreset) => set({ pathPreset }),
   setPanelOpen: (panelOpen) => set({ panelOpen }),
+  setLabelInput: (labelInput) => set({ labelInput }),
+  setStampIcon: (stampIcon) => set({ stampIcon }),
 }));

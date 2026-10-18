@@ -124,6 +124,53 @@ export function RangeControl({
   );
 }
 
+interface TextProps {
+  label: string;
+  value: string;
+  disabled?: boolean;
+  maxLength?: number;
+  /** Called on Enter or when the box loses focus, and only if the text changed. */
+  onCommit: (value: string) => void;
+}
+
+/** A text box that saves once (Enter or blur), so typing a word is ONE undo step. */
+export function TextControl({ label, value, disabled, maxLength, onCommit }: TextProps) {
+  const id = useId();
+  const [draft, setDraft] = useDraft(value);
+
+  function commit() {
+    const next = draft.trim();
+    if (next !== "" && next !== value) onCommit(next);
+    else if (next === "") setDraft(value); // empty is not allowed: put the old text back
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <Label htmlFor={id} className="text-xs">
+        {label}
+      </Label>
+      <input
+        id={id}
+        type="text"
+        value={draft}
+        disabled={disabled}
+        maxLength={maxLength}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commit();
+          } else if (e.key === "Escape") {
+            setDraft(value);
+          }
+        }}
+        className="h-7 rounded-md border bg-background px-2 text-xs"
+      />
+    </div>
+  );
+}
+
 interface SelectProps<T extends string> {
   label: string;
   value: T;

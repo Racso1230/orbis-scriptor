@@ -8,10 +8,11 @@ import {
   useState,
 } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import type Konva from "konva";
+import Konva from "konva";
 import { Group, Image as KonvaImage, Layer, Rect, Stage } from "react-konva";
 import type { MapGeometry, MapInfo, MapLayer, MapObject } from "@/lib/bindings";
 import { focusPoint, type Point } from "./geometry";
+import { LabelInputBox } from "./label-input";
 import { bottomFirst, drawOrder, isEditable } from "./layers";
 import { DEFAULT_PLAIN_COLOR, getBackgroundCanvas } from "./map-background";
 import { useMapToolStore, type MapTool } from "./map-tool-store";
@@ -102,8 +103,14 @@ export function MapCanvas({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
+  const contentLayerRef = useRef<Konva.Layer>(null);
   const transformRef = useRef<Transform>({ scale: 1, x: 0, y: 0 });
   const initialisedRef = useRef(false);
+  // True while the view is still the automatic "fit to screen": then a change of
+  // the container size (the side panel opening, the window resizing) refits it.
+  // Any manual pan or zoom switches this off.
+  const autoFitRef = useRef(true);
+  const fittedSizeRef = useRef<Size | null>(null);
 
   const [size, setSize] = useState<Size>({ width: 0, height: 0 });
   const [hover, setHover] = useState<{ name: string; x: number; y: number } | null>(null);
@@ -112,6 +119,7 @@ export function MapCanvas({
   const saveViewport = useMapToolStore((s) => s.saveViewport);
   const pendingFocus = useMapToolStore((s) => s.pendingFocus);
   const setPendingFocus = useMapToolStore((s) => s.setPendingFocus);
+  const labelInput = useMapToolStore((s) => s.labelInput);
 
   const toolDef = toolById(tool);
   const Overlay = toolDef.Overlay;
@@ -167,6 +175,7 @@ export function MapCanvas({
     (t: Transform) => {
       const stage = stageRef.current;
       if (!stage) return;
+      fittedSizeRef.current = { width: stage.width(), height: stage.height() };
       transformRef.current = t;
       stage.scale({ x: t.scale, y: t.scale });
       stage.position({ x: t.x, y: t.y });
@@ -178,6 +187,7 @@ export function MapCanvas({
   );
 
   const fit = useCallback(() => {
+    autoFitRef.current = true;
     applyTransform(fitToScreen({ width: map.width, height: map.height }, size));
   }, [applyTransform, map.width, map.height, size]);
 
@@ -186,6 +196,7 @@ export function MapCanvas({
     () => ({
       fit,
       zoomBy: (direction) => {
+        autoFitRef.current = false;
         const center = { x: size.width / 2, y: size.height / 2 };
         applyTransform(zoomAround(transformRef.current, center, -direction));
       },
@@ -199,13 +210,21 @@ export function MapCanvas({
     if (!initialisedRef.current) {
       initialisedRef.current = true;
       const saved = useMapToolStore.getState().viewports[mapEntityId];
+      autoFitRef.current = saved === undefined;
       applyTransform(saved ?? fitToScreen({ width: map.width, height: map.height }, size));
+    } else if (
+      autoFitRef.current &&
+      (fittedSizeRef.current?.width !== size.width || fittedSizeRef.current?.height !== size.height)
+    ) {
+      // Still on the automatic fit and the container changed size: fit again.
+      applyTransform(fitToScreen({ width: map.width, height: map.height }, size));
     }
     if (pendingFocus && pendingFocus.mapEntityId === mapEntityId) {
       const target = objects.find((o) => o.id === pendingFocus.objectId);
       const point = target ? focusPoint(target.geometry) : null;
       if (target && point) {
         const scale = Math.min(MAX_ZOOM, Math.max(transformRef.current.scale, 0.5));
+        autoFitRef.current = false;
         applyTransform(centerOn(point, size, scale));
         onSelect(target.id);
         setPendingFocus(null);
@@ -237,6 +256,7 @@ export function MapCanvas({
     const stage = stageRef.current;
     const pointer = stage?.getPointerPosition();
     if (!pointer) return;
+    autoFitRef.current = false;
     applyTransform(zoomAround(transformRef.current, pointer, e.evt.deltaY));
   }
 
@@ -259,6 +279,7 @@ export function MapCanvas({
     // Object drags bubble up here too; only a drag of the stage itself is a pan.
     if (e.target !== stageRef.current) return;
     const stage = e.target;
+    autoFitRef.current = false;
     const t = { scale: transformRef.current.scale, x: stage.x(), y: stage.y() };
     transformRef.current = t;
     saveViewport(mapEntityId, t);
@@ -323,8 +344,23 @@ export function MapCanvas({
 
   // Drawing tools take over the pointer: objects must not catch their clicks.
   const objectsListen = Overlay === undefined;
+  // Konva only (re)allocates and draws a layer's hit canvas on its next draw, so
+  // after objects start listening again (back to Select) force that draw now;
+  // otherwise the first click on an object would miss.
+  useEffect(() => {
+    contentLayerRef.current?.draw();
+  }, [objectsListen]);
 
-  const stageDragButtons = toolDef.leftDragPans ? [0, 1] : [1];
+  // Which mouse buttons start a drag is a GLOBAL Konva setting (not a Stage prop):
+  // tools where left-drag draws (Freehand) must not let it pan the map as well.
+  const leftDragPans = toolDef.leftDragPans;
+  useEffect(() => {
+    const previous = Konva.dragButtons;
+    Konva.dragButtons = leftDragPans ? [0, 1] : [1];
+    return () => {
+      Konva.dragButtons = previous;
+    };
+  }, [leftDragPans]);
 
   return (
     <div
@@ -338,7 +374,6 @@ export function MapCanvas({
           width={size.width}
           height={size.height}
           draggable
-          dragButtons={stageDragButtons}
           onWheel={handleWheel}
           onClick={handleStageClick}
           onTap={handleStageClick}
@@ -369,7 +404,7 @@ export function MapCanvas({
               />
             )}
           </Layer>
-          <Layer listening={objectsListen}>
+          <Layer ref={contentLayerRef} listening={objectsListen}>
             {layerGroups.map(({ layer, objects: layerObjects }) => (
               <Group key={layer.id} name="map-layer">
                 {layerObjects.map((object) => {
@@ -403,12 +438,23 @@ export function MapCanvas({
                 mapWidth={map.width}
                 mapHeight={map.height}
                 layerId={activeLayer.id}
+                background={map.backgroundStyle}
+                layers={layers}
+                objects={objects}
               />
             )}
           </Layer>
         </Stage>
       )}
 
+      {labelInput && (
+        <LabelInputBox
+          key={labelInput.mode === "edit" ? labelInput.objectId : `${labelInput.x},${labelInput.y}`}
+          input={labelInput}
+          map={map}
+          objects={objects}
+        />
+      )}
       {hover && (
         <div
           className="pointer-events-none absolute z-10 rounded-md border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-md"

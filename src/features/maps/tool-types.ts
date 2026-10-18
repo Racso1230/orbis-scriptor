@@ -1,3 +1,5 @@
+import type { MapBackground, MapLayer, MapObject } from "@/lib/bindings";
+
 /**
  * What the canvas passes to the active tool's overlay component.
  *
@@ -22,4 +24,9 @@ export interface ToolOverlayProps {
   mapHeight: number;
   /** The active layer: always an editable (visible, unlocked) one. */
   layerId: string;
+  /** The map's background look (null for image maps): label tool picks a readable colour. */
+  background: MapBackground | null;
+  /** Every layer and object of the map, for tools that need hit-testing (label-on-path). */
+  layers: MapLayer[];
+  objects: MapObject[];
 }

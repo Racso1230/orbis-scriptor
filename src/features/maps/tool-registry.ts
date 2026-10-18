@@ -1,7 +1,18 @@
 import type { ComponentType } from "react";
-import { Hexagon, MapPin, MousePointer2, Pencil, Spline, type LucideIcon } from "lucide-react";
+import {
+  Hexagon,
+  MapPin,
+  MousePointer2,
+  Pencil,
+  Spline,
+  Stamp,
+  Type,
+  type LucideIcon,
+} from "lucide-react";
 import { AreaTool, PathTool } from "./polyline-tool";
 import { FreehandTool } from "./freehand-tool";
+import { LabelTool } from "./label-tool";
+import { StampTool } from "./stamp-tool";
 import type { MapTool } from "./map-tool-store";
 import type { ToolOverlayProps } from "./tool-types";
 
@@ -28,8 +39,7 @@ export interface ToolDefinition {
 }
 
 /**
- * The tool registry, in toolbar order. To add a tool (Part 3: Label, Stamp):
- * extend `MapTool` in `map-tool-store.ts`, add an entry here (and an
+ * The tool registry, in toolbar order. To add a tool: extend `MapTool` in `map-tool-store.ts`, add an entry here (and an
  * `Overlay` component that follows `tool-types.ts`), and it appears in the
  * toolbar and gets its keyboard shortcut automatically.
  */
@@ -79,6 +89,26 @@ export const TOOLS: readonly ToolDefinition[] = [
     Overlay: AreaTool,
     needsEditableLayer: true,
     cursor: "crosshair",
+    leftDragPans: true,
+  },
+  {
+    id: "label",
+    label: "Label",
+    shortcut: "T",
+    icon: Type,
+    Overlay: LabelTool,
+    needsEditableLayer: true,
+    cursor: "text",
+    leftDragPans: true,
+  },
+  {
+    id: "stamp",
+    label: "Stamp",
+    shortcut: "S",
+    icon: Stamp,
+    Overlay: StampTool,
+    needsEditableLayer: true,
+    cursor: "copy",
     leftDragPans: true,
   },
 ];

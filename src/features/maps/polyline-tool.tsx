@@ -87,7 +87,11 @@ function PolylineTool({
         finish(pts);
         return;
       }
-      setPoints(appendPoint(pts, p, 0.5 / stage.scaleX()));
+      const next = appendPoint(pts, p, 0.5 / stage.scaleX());
+      // Update the ref right away: a fast double-click fires "dblclick" before
+      // React has re-rendered, and it must already see this click's point.
+      latest.current = { ...latest.current, points: next };
+      setPoints(next);
     }
 
     function onDblClick() {

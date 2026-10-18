@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useCreateEntity } from "@/features/entities/queries";
 import type { MapLayer, MapObject } from "@/lib/bindings";
 import { EntityPickerDialog } from "./entity-picker-dialog";
+import { anchorPoint } from "./geometry";
 import { displayOrder } from "./layers";
 import { useMapActions } from "./map-actions-context";
 import { useMapToolStore } from "./map-tool-store";
@@ -36,6 +37,7 @@ export function PropertiesPanel({ object, layers }: Props) {
 
   const kind = object.geometry.kind;
   const Editor = PROPERTY_EDITORS[kind];
+  const position = anchorPoint(object.geometry);
   const layer = layers.find((l) => l.id === object.layerId);
   const locked = layer?.locked ?? false;
 
@@ -69,6 +71,12 @@ export function PropertiesPanel({ object, layers }: Props) {
       {locked && <p className="text-xs text-muted-foreground">This layer is locked.</p>}
 
       {Editor && <Editor object={object} disabled={locked} onStyleChange={changeStyle} />}
+
+      {position && (
+        <p className="text-xs text-muted-foreground">
+          Position: {Math.round(position.x)}, {Math.round(position.y)}
+        </p>
+      )}
 
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium">Linked entity</span>
