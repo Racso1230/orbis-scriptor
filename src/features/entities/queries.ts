@@ -58,7 +58,10 @@ export function useUpdateEntity() {
       unwrap(commands.updateEntity(id, patch)),
     onSuccess: (entity: Entity) => {
       queryClient.setQueryData(entityKeys.detail(entity.id), entity);
-      return Promise.all([
+      // Not awaited: autosave shows "Saved" once the save itself is done, not
+      // after every open list, map and graph has refetched (a slow or
+      // cancelled refetch used to leave the indicator stuck on "Saving…").
+      void Promise.all([
         queryClient.invalidateQueries({ queryKey: entityKeys.list }),
         queryClient.invalidateQueries({ queryKey: searchKeys.all }),
         // Pins show the linked entity's name and type.

@@ -106,7 +106,8 @@ export function useUpdateEventDates() {
     }) => unwrap(commands.updateEventDates(entityId, startDay, endDay, importance)),
     onSuccess: (event: EventSummary) => {
       queryClient.setQueryData(eventKeys.detail(event.entityId), event);
-      return invalidateEventData(queryClient);
+      // Not awaited, so autosave reports "Saved" as soon as the save is done.
+      void invalidateEventData(queryClient);
     },
   });
 }

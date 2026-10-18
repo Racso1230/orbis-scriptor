@@ -44,8 +44,9 @@ export function useSaveDocument() {
     }) => unwrap(commands.saveDocument(entityId, content, plainText)),
     onSuccess: (doc: Document) => {
       queryClient.setQueryData(documentKeys.detail(doc.entityId), doc);
-      // Mentions may have changed, so every backlinks list is suspect.
-      return Promise.all([
+      // Mentions may have changed, so every backlinks list is suspect. Not
+      // awaited, so autosave reports "Saved" as soon as the save is done.
+      void Promise.all([
         queryClient.invalidateQueries({ queryKey: backlinkKeys.all }),
         // Lore text is indexed, so cached search results may be stale too.
         queryClient.invalidateQueries({ queryKey: searchKeys.all }),
