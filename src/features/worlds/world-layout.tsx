@@ -3,6 +3,7 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { CalendarDays, Map, MapPin, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useEntities, useEntityTypes } from "@/features/entities/queries";
+import { ExportMarkdownDialog } from "@/features/export/export-dialog";
 import { useSyncTypeLooks } from "@/features/entities/type-look";
 import { useCreateAndOpen } from "@/features/entities/use-create-and-open";
 import { CommandPalette } from "@/features/search/command-palette";
@@ -30,6 +31,7 @@ export function WorldLayout() {
       </section>
       <CommandPalette />
       <ShortcutsHost />
+      <ExportMarkdownDialog />
     </div>
   );
 }

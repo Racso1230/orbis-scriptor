@@ -4,6 +4,7 @@ import {
   CalendarCog,
   CalendarDays,
   Database,
+  FileDown,
   FlaskConical,
   Network,
   Plus,
@@ -30,6 +31,7 @@ import { runUpdateCheck } from "@/features/updates/check-for-updates";
 import { useOpenGraph } from "@/features/relationships/use-open-graph";
 import { useOpenTimeline } from "@/features/timeline/use-open-timeline";
 import { useCloseWorld } from "@/features/worlds/queries";
+import { useExportStore } from "@/features/export/export-store";
 import { HighlightedSnippet } from "./highlighted-snippet";
 import { useSearch } from "./queries";
 import {
@@ -56,6 +58,7 @@ export function CommandPalette() {
   const closeWorld = useCloseWorld();
   const search = useSearch(query);
   const maintenance = useIndexMaintenance();
+  const openExport = useExportStore((s) => s.openDialog);
 
   function changeOpen(next: boolean) {
     setOpen(next);
@@ -134,6 +137,15 @@ export function CommandPalette() {
       run: () => {
         changeOpen(false);
         void navigate({ to: "/world/types" });
+      },
+    },
+    {
+      id: "export-markdown",
+      label: "Export to Markdown…",
+      icon: <FileDown />,
+      run: () => {
+        changeOpen(false);
+        openExport();
       },
     },
     {

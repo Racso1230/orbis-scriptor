@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { CalendarCog, Database, FlaskConical, Settings, Shapes } from "lucide-react";
+import { CalendarCog, Database, FlaskConical, FileDown, Settings, Shapes } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -9,6 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useExportStore } from "@/features/export/export-store";
 import {
   SEED_COUNT,
   SEED_EVENT_COUNT,
@@ -19,6 +20,7 @@ import {
 /** Gear menu in the header with recovery and dev tools. */
 export function DebugMenu() {
   const navigate = useNavigate();
+  const openExport = useExportStore((s) => s.openDialog);
   const { rebuildIndex, seedEntities, seedEvents, seedRelationships, status, busy } =
     useIndexMaintenance();
 
@@ -49,6 +51,9 @@ export function DebugMenu() {
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => void navigate({ to: "/world/types" })}>
             <Shapes /> Entity types
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={openExport}>
+            <FileDown /> Export to Markdown…
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuLabel>Maintenance</DropdownMenuLabel>
