@@ -45,16 +45,44 @@ export const commands = {
 	listRecentWorlds: () => typedError<RecentWorld[], AppError>(__TAURI_INVOKE("list_recent_worlds")),
 	removeRecentWorld: (path: string) => typedError<null, AppError>(__TAURI_INVOKE("remove_recent_world", { path })),
 	/**
-	 *  The built-in entity types with their fields (the sidebar and forms are
-	 *  driven by this).
+	 *  All entity types of the open world with their fields: the built-in
+	 *  types (with any extra user fields), then the custom types. The sidebar
+	 *  and forms are driven by this.
 	 */
-	entityTypes: () => __TAURI_INVOKE<EntityTypeDef[]>("entity_types"),
+	entityTypes: () => typedError<EntityTypeDef[], AppError>(__TAURI_INVOKE("entity_types")),
 	/**  Lists entities of one type, or all of them when `entity_type` is null. */
 	listEntities: (entityType: string | null) => typedError<EntitySummary[], AppError>(__TAURI_INVOKE("list_entities", { entityType })),
 	getEntity: (id: string) => typedError<Entity, AppError>(__TAURI_INVOKE("get_entity", { id })),
 	createEntity: (input: NewEntity) => typedError<Entity, AppError>(__TAURI_INVOKE("create_entity", { input })),
 	updateEntity: (id: string, patch: EntityPatch) => typedError<Entity, AppError>(__TAURI_INVOKE("update_entity", { id, patch })),
 	deleteEntity: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("delete_entity", { id })),
+	/**  The icon names a custom type may use (lucide names). */
+	listTypeIcons: () => __TAURI_INVOKE<string[]>("list_type_icons"),
+	/**
+	 *  Creates a custom type. `color` is `#RRGGBB` (empty = default). Field keys
+	 *  are generated from the labels.
+	 */
+	createEntityType: (label: string, plural: string, icon: string, color: string, fields: FieldInput[]) => typedError<EntityTypeDef, AppError>(__TAURI_INVOKE("create_entity_type", { label, plural, icon, color, fields })),
+	/**
+	 *  Edits a custom type; `null` arguments stay unchanged. `fields`, when
+	 *  given, replaces the whole field list (send existing fields with their keys).
+	 */
+	updateEntityType: (key: string, label: string | null, plural: string | null, icon: string | null, color: string | null, fields: FieldInput[] | null) => typedError<EntityTypeDef, AppError>(__TAURI_INVOKE("update_entity_type", { key, label, plural, icon, color, fields })),
+	/**
+	 *  Deletes a custom type. When entities of the type exist, `reassign_to`
+	 *  must name another type; they are converted in one transaction.
+	 */
+	deleteEntityType: (key: string, reassignTo: string | null) => typedError<null, AppError>(__TAURI_INVOKE("delete_entity_type", { key, reassignTo })),
+	/**
+	 *  Sets the extra user fields of a built-in type (the built-in fields stay
+	 *  fixed). For a custom type this replaces its field list.
+	 */
+	setTypeTemplateFields: (typeKey: string, fields: FieldInput[]) => typedError<EntityTypeDef, AppError>(__TAURI_INVOKE("set_type_template_fields", { typeKey, fields })),
+	/**
+	 *  Sets the display order of the custom types (all keys, once each) and
+	 *  returns the full merged type list.
+	 */
+	reorderEntityTypes: (keys: string[]) => typedError<EntityTypeDef[], AppError>(__TAURI_INVOKE("reorder_entity_types", { keys })),
 	/**  The lore document of an entity (empty document if none was saved yet). */
 	getDocument: (entityId: string) => typedError<Document, AppError>(__TAURI_INVOKE("get_document", { entityId })),
 	/**  Saves the editor's JSON plus the plain text used for search. */
@@ -425,12 +453,19 @@ export type EntitySummary = {
 };
 
 export type EntityTypeDef = {
-	/**  Stored in `entities.type`, e.g. `character`. */
+	/**  Stored in `entities.type`, e.g. `character` or `custom-deity`. */
 	key: string,
 	label: string,
 	plural: string,
-	/**  A lucide icon name the frontend maps to a component. */
+	/**
+	 *  A lucide icon name the frontend maps to a component
+	 *  (see `services::entity_types::type_icons`).
+	 */
 	icon: string,
+	/**  `#rrggbb`, used for map pins and graph nodes. */
+	color: string,
+	/**  True for the built-in types (cannot be renamed or deleted). */
+	builtin: boolean,
 	fields: FieldDef[],
 };
 
@@ -478,12 +513,55 @@ export type FieldDef = {
 	key: string,
 	label: string,
 	kind: FieldKind,
-	/**  Choices for `Select`; empty for other kinds. */
+	/**  Choices for `Select` / `MultiSelect`; empty for other kinds. */
+	options: string[],
+	/**
+	 *  True for fields the user defined (editable); false for the built-in
+	 *  fields of the built-in types.
+	 */
+	custom: boolean,
+};
+
+/**
+ *  A field as sent by the frontend when creating or editing a type.
+ *  `key` is `None` for a new field (the backend generates it from the label);
+ *  an existing field must send its current key back so stored values stay
+ *  attached to it.
+ */
+export type FieldInput = {
+	key: string | null,
+	label: string,
+	kind: FieldKind,
 	options: string[],
 };
 
-/**  How a type-specific field is edited. */
-export type FieldKind = "text" | "number" | "select";
+/**
+ *  How a type-specific field is edited and what its value in an entity's
+ *  `properties` JSON looks like.
+ * 
+ *  Serde writes unit variants as plain strings (`"text"`) and the data
+ *  variant as `{ "entityRef": { "allowedTypes": [...], "multiple": true } }`.
+ * 
+ *  | kind          | JSON value in `properties[key]` |
+ *  | ------------- | ------------------------------- |
+ *  | `text`        | string |
+ *  | `longText`    | string (multi-line) |
+ *  | `number`      | number |
+ *  | `boolean`     | `true` / `false` |
+ *  | `select`      | string, one of `options` |
+ *  | `multiSelect` | array of strings, each one of `options` |
+ *  | `date`        | integer in-world day number (format with the display calendar) |
+ *  | `entityRef`   | entity id string (`multiple: false`) or array of ids (`multiple: true`) |
+ *  | `url`         | string starting with `http://`, `https://` or `mailto:` |
+ * 
+ *  A missing key, `null` or an empty string/array all mean "not set".
+ */
+export type FieldKind = "text" | "number" | "select" | "longText" | "boolean" | "date" | 
+/**  Reference(s) to other entities. `allowedTypes` empty = any type. */
+{ entityRef: {
+	allowedTypes: string[],
+	multiple: boolean,
+} } | "multiSelect" | "url";
 
 export type GraphEdge = {
 	/**  The `links` row id. */
@@ -501,7 +579,7 @@ export type GraphEdge = {
 export type GraphFilter = {
 	/**
 	 *  Relationship kind keys to follow. `None` = every relationship kind.
-	 *  May also contain `mention` and `involved_in` (excluded by default).
+	 *  May also contain `mention`, `involved_in` and `field_ref` (excluded by default).
 	 */
 	kinds: string[] | null,
 	/**  Entity types to keep. `None` = all. The focus node is always kept. */

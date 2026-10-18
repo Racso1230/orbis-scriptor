@@ -20,7 +20,7 @@ use uuid::Uuid;
 use crate::db;
 use crate::db::links::LinkRow;
 use crate::error::{AppError, AppResult};
-use crate::models::link::{KIND_INVOLVED_IN, KIND_MENTION};
+use crate::models::link::{KIND_FIELD_REF, KIND_INVOLVED_IN, KIND_MENTION};
 use crate::models::relationship::{
     self as catalog, KIND_CUSTOM, RelationshipCategory, RelationshipKindDef, RelationshipRecord,
     RelationshipView,
@@ -34,14 +34,15 @@ pub fn list_kinds() -> Vec<RelationshipKindDef> {
     catalog::all()
 }
 
-/// Keys of every relationship kind (excludes `mention` / `involved_in`).
+/// Keys of every relationship kind (excludes `mention`, `involved_in` and `field_ref`).
 pub fn relationship_kind_keys() -> Vec<String> {
     catalog::all().into_iter().map(|k| k.key).collect()
 }
 
-/// True for the two link kinds owned by other features.
+/// True for the link kinds owned by other features (lore mentions, event
+/// participation and entity-reference fields).
 pub fn is_reserved_kind(kind: &str) -> bool {
-    kind == KIND_MENTION || kind == KIND_INVOLVED_IN
+    kind == KIND_MENTION || kind == KIND_INVOLVED_IN || kind == KIND_FIELD_REF
 }
 
 /// Looks up a kind, with clear errors for unknown and reserved ones.
@@ -226,6 +227,12 @@ pub fn edge_info(kind: &str, label: Option<&str>) -> (String, bool, Relationship
     match kind {
         KIND_MENTION => ("mentions".into(), false, RelationshipCategory::Other),
         KIND_INVOLVED_IN => ("involved in".into(), false, RelationshipCategory::Other),
+        // The label is the name of the field that holds the reference.
+        KIND_FIELD_REF => (
+            label.unwrap_or("references").to_owned(),
+            false,
+            RelationshipCategory::Other,
+        ),
         _ => match catalog::find(kind) {
             Some(def) => (phrase(&def, label, true), def.symmetric, def.category),
             // Unknown kind in the file (e.g. from a newer app version).

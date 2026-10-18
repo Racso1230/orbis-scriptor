@@ -37,10 +37,12 @@ describe("GraphPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useGraphStore.setState({ focusId: null, history: [], mode: "graph", depth: 2 });
-    commands.entityTypes.mockReturnValue([
-      { key: "character", label: "Character", plural: "Characters", icon: "user", fields: [] },
-      { key: "faction", label: "Faction", plural: "Factions", icon: "flag", fields: [] },
-    ]);
+    commands.entityTypes.mockResolvedValue(
+      ok([
+        { key: "character", label: "Character", plural: "Characters", icon: "user", fields: [] },
+        { key: "faction", label: "Faction", plural: "Factions", icon: "flag", fields: [] },
+      ]),
+    );
     commands.listRelationshipKinds.mockReturnValue(KINDS);
     commands.listEntities.mockResolvedValue(
       ok([

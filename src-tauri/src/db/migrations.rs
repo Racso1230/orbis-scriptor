@@ -161,6 +161,28 @@ const MIGRATIONS_SLICE: &[M<'_>] = &[
             value TEXT NOT NULL
         );",
     ),
+    // 011: user-defined entity types and field templates (Phase 12).
+    // `custom_entity_types.fields` is a JSON array of field definitions (all
+    // the type's fields). `type_templates` holds EXTRA user fields for a
+    // built-in type (the built-in fields stay in code). `entities.type` has
+    // no foreign key, so a custom type's key is simply stored there.
+    M::up(
+        "CREATE TABLE custom_entity_types (
+            key         TEXT PRIMARY KEY,           -- 'custom-<slug>', immutable
+            label       TEXT NOT NULL,
+            plural      TEXT NOT NULL,
+            icon        TEXT NOT NULL,
+            color       TEXT NOT NULL,
+            fields      TEXT NOT NULL DEFAULT '[]', -- JSON array of FieldDef
+            sort_order  INTEGER NOT NULL,
+            created_at  TEXT NOT NULL,
+            updated_at  TEXT NOT NULL
+        );
+        CREATE TABLE type_templates (
+            type_key    TEXT PRIMARY KEY,
+            fields      TEXT NOT NULL DEFAULT '[]'  -- JSON array of FieldDef
+        );",
+    ),
 ];
 
 pub const MIGRATIONS: Migrations<'_> = Migrations::from_slice(MIGRATIONS_SLICE);
@@ -220,6 +242,30 @@ mod tests {
         );
         assert!(crate::services::calendar::validate(&calendar.definition).is_ok());
         assert_eq!(crate::db::calendars::list(&conn).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn migration_011_adds_type_tables_and_keeps_entities() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        MIGRATIONS.to_version(&mut conn, 10).unwrap();
+        conn.execute_batch(
+            "INSERT INTO entities (id, type, name, summary, properties, created_at, updated_at)
+               VALUES ('e1', 'character', 'Ada', '', '{}', 't', 't');",
+        )
+        .unwrap();
+        MIGRATIONS.to_latest(&mut conn).unwrap();
+        let tables: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master
+                 WHERE name IN ('custom_entity_types', 'type_templates')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let entities: i64 = conn
+            .query_row("SELECT count(*) FROM entities", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!((tables, entities), (2, 1));
     }
 
     #[test]

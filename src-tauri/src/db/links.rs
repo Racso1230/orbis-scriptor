@@ -48,6 +48,38 @@ pub fn replace_from_source(
     Ok(())
 }
 
+/// Like [`replace_from_source`] but each target carries a label (used for
+/// `field_ref` links, where the label is the field's name). Duplicate
+/// targets keep the first label because of the UNIQUE constraint.
+pub fn replace_from_source_labeled(
+    conn: &Connection,
+    source_id: &str,
+    kind: &str,
+    targets: &[(String, String)],
+) -> AppResult<()> {
+    conn.execute(
+        "DELETE FROM links WHERE source_id = ?1 AND kind = ?2",
+        params![source_id, kind],
+    )?;
+    let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    let mut stmt = conn.prepare(
+        "INSERT OR IGNORE INTO links (id, source_id, target_id, kind, label, created_at)
+         SELECT ?1, ?2, ?3, ?4, ?5, ?6
+         WHERE EXISTS (SELECT 1 FROM entities WHERE id = ?3)",
+    )?;
+    for (target, label) in targets {
+        stmt.execute(params![
+            Uuid::now_v7().to_string(),
+            source_id,
+            target,
+            kind,
+            label,
+            now
+        ])?;
+    }
+    Ok(())
+}
+
 /// Entities that link to `target_id` with `kind`, with their lore text.
 pub fn sources_for_target(
     conn: &Connection,

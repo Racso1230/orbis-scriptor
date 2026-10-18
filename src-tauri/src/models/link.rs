@@ -19,3 +19,9 @@ pub struct Backlink {
 /// Direction: `source` = the involved entity, `target` = the event
 /// (read it as "source is involved in target").
 pub const KIND_INVOLVED_IN: &str = "involved_in";
+
+/// Link kind written when an entity-reference field of an entity points at
+/// another entity. Direction: `source` = the entity that holds the field,
+/// `target` = the referenced entity; `label` = the field label. Kept in sync
+/// by `services::properties` on every entity update.
+pub const KIND_FIELD_REF: &str = "field_ref";

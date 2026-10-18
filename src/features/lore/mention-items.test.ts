@@ -3,8 +3,24 @@ import type { EntitySummary, EntityTypeDef } from "@/lib/bindings";
 import { buildMentionItems } from "./mention-items";
 
 const types: EntityTypeDef[] = [
-  { key: "character", label: "Character", plural: "Characters", icon: "", fields: [] },
-  { key: "location", label: "Location", plural: "Locations", icon: "", fields: [] },
+  {
+    key: "character",
+    label: "Character",
+    plural: "Characters",
+    icon: "",
+    color: "#000000",
+    builtin: true,
+    fields: [],
+  },
+  {
+    key: "location",
+    label: "Location",
+    plural: "Locations",
+    icon: "",
+    color: "#000000",
+    builtin: true,
+    fields: [],
+  },
 ];
 const entities: EntitySummary[] = [
   { id: "1", type: "character", name: "Ada", updatedAt: "" },

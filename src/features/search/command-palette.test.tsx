@@ -33,9 +33,11 @@ describe("CommandPalette", () => {
     };
     Element.prototype.scrollIntoView = vi.fn();
 
-    commands.entityTypes.mockResolvedValue([
-      { key: "character", label: "Character", plural: "Characters", icon: "user", fields: [] },
-    ]);
+    commands.entityTypes.mockResolvedValue(
+      ok([
+        { key: "character", label: "Character", plural: "Characters", icon: "user", fields: [] },
+      ]),
+    );
     commands.search.mockResolvedValue(
       ok([
         {

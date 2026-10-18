@@ -13,8 +13,7 @@ export const entityKeys = {
 export function useEntityTypes() {
   return useQuery({
     queryKey: entityKeys.types,
-    // Not wrapped in a Result: this command cannot fail.
-    queryFn: () => commands.entityTypes(),
+    queryFn: () => unwrap(commands.entityTypes()),
     staleTime: Infinity,
   });
 }

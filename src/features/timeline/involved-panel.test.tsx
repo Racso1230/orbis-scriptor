@@ -43,10 +43,12 @@ const summary = (id: string, name: string, type = "character") => ({
 describe("InvolvedPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    commands.entityTypes.mockReturnValue([
-      { key: "character", label: "Character", icon: "user" },
-      { key: "faction", label: "Faction", icon: "flag" },
-    ]);
+    commands.entityTypes.mockResolvedValue(
+      ok([
+        { key: "character", label: "Character", icon: "user" },
+        { key: "faction", label: "Faction", icon: "flag" },
+      ]),
+    );
     commands.listInvolved.mockResolvedValue(
       ok([summary("c1", "Aldric"), summary("f1", "House Vane", "faction")]),
     );

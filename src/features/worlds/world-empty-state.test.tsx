@@ -30,7 +30,7 @@ const types = ["character", "location", "map", "event"].map((key) => ({
 describe("WorldEmptyState", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    commands.entityTypes.mockResolvedValue(types);
+    commands.entityTypes.mockResolvedValue({ status: "ok", data: types });
     commands.createEntity.mockResolvedValue({
       status: "ok",
       data: { id: "new-1", type: "character", name: "New Character", summary: "", properties: {} },

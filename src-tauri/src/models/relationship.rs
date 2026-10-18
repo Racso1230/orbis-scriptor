@@ -235,7 +235,7 @@ pub struct RelationshipView {
 #[serde(rename_all = "camelCase")]
 pub struct GraphFilter {
     /// Relationship kind keys to follow. `None` = every relationship kind.
-    /// May also contain `mention` and `involved_in` (excluded by default).
+    /// May also contain `mention`, `involved_in` and `field_ref` (excluded by default).
     pub kinds: Option<Vec<String>>,
     /// Entity types to keep. `None` = all. The focus node is always kept.
     pub entity_types: Option<Vec<String>>,

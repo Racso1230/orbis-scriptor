@@ -2,16 +2,17 @@ use tauri::State;
 
 use crate::error::AppResult;
 use crate::models::entity::{Entity, EntityPatch, EntitySummary, NewEntity};
-use crate::models::entity_type::{self, EntityTypeDef};
-use crate::services::entities;
+use crate::models::entity_type::EntityTypeDef;
+use crate::services::{entities, entity_types};
 use crate::state::AppState;
 
-/// The built-in entity types with their fields (the sidebar and forms are
-/// driven by this).
+/// All entity types of the open world with their fields: the built-in
+/// types (with any extra user fields), then the custom types. The sidebar
+/// and forms are driven by this.
 #[tauri::command]
 #[specta::specta]
-pub fn entity_types() -> Vec<EntityTypeDef> {
-    entity_type::all()
+pub fn entity_types(state: State<'_, AppState>) -> AppResult<Vec<EntityTypeDef>> {
+    state.with_world(|w| entity_types::merged(&w.conn))
 }
 
 /// Lists entities of one type, or all of them when `entity_type` is null.

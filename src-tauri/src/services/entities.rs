@@ -9,9 +9,8 @@ use uuid::Uuid;
 use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::models::entity::{Entity, EntityPatch, EntitySummary, NewEntity};
-use crate::models::entity_type;
 use crate::models::map::MapBackground;
-use crate::services::{events, maps, search};
+use crate::services::{entity_types, events, maps, properties, search};
 
 /// UTC ISO-8601 with milliseconds and a `Z` suffix.
 fn now() -> String {
@@ -26,8 +25,9 @@ fn validate_name(name: &str) -> AppResult<String> {
     Ok(trimmed.to_owned())
 }
 
-fn validate_type(entity_type: &str) -> AppResult<()> {
-    if entity_type::is_valid(entity_type) {
+/// A type is valid when it is built in or a custom type of this world.
+fn validate_type(conn: &Connection, entity_type: &str) -> AppResult<()> {
+    if entity_types::is_known(conn, entity_type)? {
         Ok(())
     } else {
         Err(AppError::Validation(format!(
@@ -92,7 +92,7 @@ fn create_with_dates(
     end_day: Option<i64>,
     blank_map: Option<(u32, u32, &MapBackground)>,
 ) -> AppResult<Entity> {
-    validate_type(&input.entity_type)?;
+    validate_type(conn, &input.entity_type)?;
     let name = validate_name(&input.name)?;
     let timestamp = now();
     let entity = Entity {
@@ -134,7 +134,7 @@ pub fn get(conn: &Connection, id: &str) -> AppResult<Entity> {
 
 pub fn list(conn: &Connection, entity_type: Option<&str>) -> AppResult<Vec<EntitySummary>> {
     if let Some(t) = entity_type {
-        validate_type(t)?;
+        validate_type(conn, t)?;
     }
     db::entities::list(conn, entity_type)
 }
@@ -148,13 +148,23 @@ pub fn update(conn: &Connection, id: &str, patch: EntityPatch) -> AppResult<Enti
     if let Some(summary) = patch.summary {
         entity.summary = summary;
     }
-    if let Some(properties) = patch.properties {
-        validate_properties(&properties)?;
-        entity.properties = properties;
+    // Type-specific fields (`properties`) are checked against the field
+    // definitions of the entity's type (built-in plus the user's own).
+    let mut fields = None;
+    if let Some(new_properties) = patch.properties {
+        validate_properties(&new_properties)?;
+        let defs = entity_types::fields_for(conn, &entity.entity_type)?;
+        properties::validate_changes(conn, &defs, &entity.properties, &new_properties)?;
+        entity.properties = new_properties;
+        fields = Some(defs);
     }
     entity.updated_at = now();
     let tx = conn.unchecked_transaction()?;
     db::entities::update(&tx, &entity)?;
+    // Entity-reference fields are mirrored as `field_ref` links.
+    if let Some(defs) = &fields {
+        properties::sync_field_refs(&tx, &entity.id, defs, &entity.properties)?;
+    }
     search::reindex_entity(&tx, &entity.id)?;
     tx.commit()?;
     Ok(entity)

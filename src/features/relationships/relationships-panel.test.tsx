@@ -61,10 +61,12 @@ const record = { id: "new", sourceId: "", targetId: "", kind: "", label: null };
 describe("RelationshipsPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    commands.entityTypes.mockReturnValue([
-      { key: "character", label: "Character", plural: "Characters", icon: "user", fields: [] },
-      { key: "faction", label: "Faction", plural: "Factions", icon: "flag", fields: [] },
-    ]);
+    commands.entityTypes.mockResolvedValue(
+      ok([
+        { key: "character", label: "Character", plural: "Characters", icon: "user", fields: [] },
+        { key: "faction", label: "Faction", plural: "Factions", icon: "flag", fields: [] },
+      ]),
+    );
     commands.listRelationshipKinds.mockReturnValue(KINDS);
     commands.listEntities.mockResolvedValue(
       ok([

@@ -1,18 +1,54 @@
-//! The one place that defines the built-in entity types: their keys, labels,
-//! icons and type-specific fields. The frontend fetches this list through the
-//! `entity_types` command, so adding a type here is enough to make it appear
-//! in the sidebar and get a fields form.
+//! Entity types and their fields.
+//!
+//! Two sources feed the type list the frontend sees (merged by
+//! `services::entity_types`):
+//! - the built-in catalog below (fixed keys, labels and fields), and
+//! - types the user defines per world (`custom_entity_types` table), plus
+//!   extra user fields on any type (`type_templates` table).
+//!
+//! Map and event behaviour (their extra tables) stays tied to the built-in
+//! keys `map` and `event`.
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-/// How a type-specific field is edited.
+/// How a type-specific field is edited and what its value in an entity's
+/// `properties` JSON looks like.
+///
+/// Serde writes unit variants as plain strings (`"text"`) and the data
+/// variant as `{ "entityRef": { "allowedTypes": [...], "multiple": true } }`.
+///
+/// | kind          | JSON value in `properties[key]` |
+/// | ------------- | ------------------------------- |
+/// | `text`        | string |
+/// | `longText`    | string (multi-line) |
+/// | `number`      | number |
+/// | `boolean`     | `true` / `false` |
+/// | `select`      | string, one of `options` |
+/// | `multiSelect` | array of strings, each one of `options` |
+/// | `date`        | integer in-world day number (format with the display calendar) |
+/// | `entityRef`   | entity id string (`multiple: false`) or array of ids (`multiple: true`) |
+/// | `url`         | string starting with `http://`, `https://` or `mailto:` |
+///
+/// A missing key, `null` or an empty string/array all mean "not set".
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum FieldKind {
     Text,
     Number,
     Select,
+    LongText,
+    Boolean,
+    Date,
+    /// Reference(s) to other entities. `allowedTypes` empty = any type.
+    EntityRef {
+        // `rename` because the enum-level `rename_all` only renames variants.
+        #[serde(rename = "allowedTypes")]
+        allowed_types: Vec<String>,
+        multiple: bool,
+    },
+    MultiSelect,
+    Url,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -22,19 +58,40 @@ pub struct FieldDef {
     pub key: String,
     pub label: String,
     pub kind: FieldKind,
-    /// Choices for `Select`; empty for other kinds.
+    /// Choices for `Select` / `MultiSelect`; empty for other kinds.
+    pub options: Vec<String>,
+    /// True for fields the user defined (editable); false for the built-in
+    /// fields of the built-in types.
+    pub custom: bool,
+}
+
+/// A field as sent by the frontend when creating or editing a type.
+/// `key` is `None` for a new field (the backend generates it from the label);
+/// an existing field must send its current key back so stored values stay
+/// attached to it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FieldInput {
+    pub key: Option<String>,
+    pub label: String,
+    pub kind: FieldKind,
     pub options: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct EntityTypeDef {
-    /// Stored in `entities.type`, e.g. `character`.
+    /// Stored in `entities.type`, e.g. `character` or `custom-deity`.
     pub key: String,
     pub label: String,
     pub plural: String,
-    /// A lucide icon name the frontend maps to a component.
+    /// A lucide icon name the frontend maps to a component
+    /// (see `services::entity_types::type_icons`).
     pub icon: String,
+    /// `#rrggbb`, used for map pins and graph nodes.
+    pub color: String,
+    /// True for the built-in types (cannot be renamed or deleted).
+    pub builtin: bool,
     pub fields: Vec<FieldDef>,
 }
 
@@ -44,6 +101,7 @@ fn text(key: &str, label: &str) -> FieldDef {
         label: label.into(),
         kind: FieldKind::Text,
         options: vec![],
+        custom: false,
     }
 }
 
@@ -53,6 +111,7 @@ fn number(key: &str, label: &str) -> FieldDef {
         label: label.into(),
         kind: FieldKind::Number,
         options: vec![],
+        custom: false,
     }
 }
 
@@ -62,18 +121,32 @@ fn select(key: &str, label: &str, options: &[&str]) -> FieldDef {
         label: label.into(),
         kind: FieldKind::Select,
         options: options.iter().map(|o| (*o).to_owned()).collect(),
+        custom: false,
     }
 }
 
-fn def(key: &str, label: &str, plural: &str, icon: &str, fields: Vec<FieldDef>) -> EntityTypeDef {
+fn def(
+    key: &str,
+    label: &str,
+    plural: &str,
+    icon: &str,
+    color: &str,
+    fields: Vec<FieldDef>,
+) -> EntityTypeDef {
     EntityTypeDef {
         key: key.into(),
         label: label.into(),
         plural: plural.into(),
         icon: icon.into(),
+        color: color.into(),
+        builtin: true,
         fields,
     }
 }
+
+/// Colour given to custom types that do not pick one (matches the pin look
+/// the frontend used for unknown types).
+pub const DEFAULT_CUSTOM_COLOR: &str = "#0891b2";
 
 /// All built-in types, in sidebar order.
 pub fn all() -> Vec<EntityTypeDef> {
@@ -83,6 +156,7 @@ pub fn all() -> Vec<EntityTypeDef> {
             "Character",
             "Characters",
             "user",
+            "#2563eb",
             vec![
                 text("species", "Species"),
                 number("age", "Age"),
@@ -94,6 +168,7 @@ pub fn all() -> Vec<EntityTypeDef> {
             "Location",
             "Locations",
             "map-pin",
+            "#16a34a",
             vec![
                 select(
                     "kind",
@@ -108,6 +183,7 @@ pub fn all() -> Vec<EntityTypeDef> {
             "Faction",
             "Factions",
             "flag",
+            "#dc2626",
             vec![
                 select(
                     "kind",
@@ -122,6 +198,7 @@ pub fn all() -> Vec<EntityTypeDef> {
             "Item",
             "Items",
             "sword",
+            "#d97706",
             vec![
                 select(
                     "kind",
@@ -131,15 +208,23 @@ pub fn all() -> Vec<EntityTypeDef> {
                 text("owner", "Owner"),
             ],
         ),
-        def("note", "Note", "Notes", "sticky-note", vec![]),
+        def("note", "Note", "Notes", "sticky-note", "#ca8a04", vec![]),
         // A map is an entity too; its image and pins live in the `maps*` tables.
-        def("map", "Map", "Maps", "map", vec![]),
+        def("map", "Map", "Maps", "map", "#7c3aed", vec![]),
         // An event is an entity too; its dates live in the `events` table.
-        def("event", "Event", "Events", "calendar-days", vec![]),
+        def(
+            "event",
+            "Event",
+            "Events",
+            "calendar-days",
+            "#db2777",
+            vec![],
+        ),
     ]
 }
 
-/// True when `key` names a built-in type.
+/// True when `key` names a BUILT-IN type. Use
+/// `services::entity_types::is_known` to include custom types.
 pub fn is_valid(key: &str) -> bool {
     all().iter().any(|t| t.key == key)
 }
@@ -171,6 +256,7 @@ mod tests {
                     "{}",
                     f.key
                 );
+                assert!(!f.custom);
             }
         }
     }

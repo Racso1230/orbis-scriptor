@@ -4,6 +4,7 @@ pub mod assets;
 pub mod calendars;
 pub mod documents;
 pub mod entities;
+pub mod entity_types;
 pub mod events;
 pub mod links;
 pub mod maps;

@@ -6,6 +6,7 @@ pub mod app;
 pub mod calendars;
 pub mod documents;
 pub mod entities;
+pub mod entity_types;
 pub mod events;
 pub mod export;
 pub mod links;

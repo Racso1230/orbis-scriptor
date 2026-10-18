@@ -7,6 +7,8 @@ const type = (key: string, plural: string): EntityTypeDef => ({
   label: key,
   plural,
   icon: "",
+  color: "#000000",
+  builtin: true,
   fields: [],
 });
 const entity = (id: string, t: string, name: string): EntitySummary => ({

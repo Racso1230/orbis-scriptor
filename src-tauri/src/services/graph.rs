@@ -16,12 +16,11 @@ use crate::db;
 use crate::db::links::LinkRow;
 use crate::error::{AppError, AppResult};
 use crate::models::entity::EntitySummary;
-use crate::models::entity_type;
-use crate::models::link::{KIND_INVOLVED_IN, KIND_MENTION};
+use crate::models::link::{KIND_FIELD_REF, KIND_INVOLVED_IN, KIND_MENTION};
 use crate::models::relationship::{
     EntityGraph, FAMILY_KINDS, FamilyNode, FamilyTree, GraphEdge, GraphFilter, GraphNode,
 };
-use crate::services::{entities, relationships};
+use crate::services::{entities, entity_types, relationships};
 
 pub const DEFAULT_MAX_NODES: u32 = 200;
 pub const MAX_NODES_CAP: u32 = 500;
@@ -32,8 +31,8 @@ pub const MAX_GENERATIONS: u32 = 10;
 pub const FAMILY_MAX_NODES: usize = 300;
 
 /// Turns the requested kind filter into the list of kinds to follow.
-/// `None` means "all relationship kinds" (mentions and involved_in are
-/// opt-in). Unknown kinds are an error rather than silently ignored.
+/// `None` means "all relationship kinds" (mentions, involved_in and
+/// field_ref are opt-in). Unknown kinds are an error rather than silently ignored.
 fn effective_kinds(requested: Option<&Vec<String>>) -> AppResult<Vec<String>> {
     let Some(list) = requested else {
         return Ok(relationships::relationship_kind_keys());
@@ -41,7 +40,10 @@ fn effective_kinds(requested: Option<&Vec<String>>) -> AppResult<Vec<String>> {
     let known = relationships::relationship_kind_keys();
     let mut out: Vec<String> = Vec::new();
     for kind in list {
-        let ok = known.contains(kind) || kind == KIND_MENTION || kind == KIND_INVOLVED_IN;
+        let ok = known.contains(kind)
+            || kind == KIND_MENTION
+            || kind == KIND_INVOLVED_IN
+            || kind == KIND_FIELD_REF;
         if !ok {
             return Err(AppError::Validation(format!(
                 "Unknown relationship kind \"{kind}\""
@@ -121,7 +123,7 @@ pub fn get_entity_graph(
     // `Option<&Vec<String>>` -> `Option<HashSet<&str>>` for fast lookups.
     if let Some(types) = &filter.entity_types {
         for t in types {
-            if !entity_type::is_valid(t) {
+            if !entity_types::is_known(conn, t)? {
                 return Err(AppError::Validation(format!("Unknown entity type \"{t}\"")));
             }
         }
