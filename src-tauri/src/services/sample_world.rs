@@ -598,7 +598,7 @@ pub fn populate(conn: &Connection, assets_dir: &Path) -> AppResult<()> {
             start,
             end,
         )?;
-        events::update_dates(conn, &event.id, start, end, Some(seed.importance))?;
+        events::update_dates(conn, &event.id, start, end, Some(seed.importance), None)?;
         entities::update(
             conn,
             &event.id,

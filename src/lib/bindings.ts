@@ -136,6 +136,51 @@ export const commands = {
 	dateParts: (calendarId: string | null, day: JsInt) => typedError<CalendarDate, AppError>(__TAURI_INVOKE("date_parts", { calendarId, day })),
 	/**  The inverse of `date_parts`: month and day are 1-based. */
 	dayFromParts: (calendarId: string | null, eraIndex: number, year: JsInt, month: number, day: number) => typedError<JsInt, AppError>(__TAURI_INVOKE("day_from_parts", { calendarId, eraIndex, year, month, day })),
+	getCalendar: (id: string) => typedError<Calendar, AppError>(__TAURI_INVOKE("get_calendar", { id })),
+	/**  Creates a calendar. Fails with a validation error naming the bad fields. */
+	createCalendar: (name: string, definition: CalendarDefinition) => typedError<Calendar, AppError>(__TAURI_INVOKE("create_calendar", { name, definition })),
+	/**
+	 *  Renames and/or redefines a calendar (null = keep). Events never move:
+	 *  changing month lengths, leap rules or the epoch offset only changes how
+	 *  the existing absolute days are displayed.
+	 */
+	updateCalendar: (id: string, name: string | null, definition: {
+	months: Month[],
+	/**  Names of the days of the week; may be empty (no weekdays). */
+	weekdays: string[],
+	/**  Sorted by `start_day`, at least one. */
+	eras: Era[],
+	/**
+	 *  The world's absolute day number on which this calendar's day 1 of
+	 *  month 1 of its year 1 falls. 0 for the default calendar. Shifting it
+	 *  moves how every day is *displayed*; no event ever moves.
+	 *  (`serde(default)` keeps definitions stored before Phase 11 loading.)
+	 */
+	epochOffset?: number,
+	/**  Optional leap-year rule; `None` = every year has the same length. */
+	leap?: LeapRule | null,
+} | null) => typedError<Calendar, AppError>(__TAURI_INVOKE("update_calendar", { id, name, definition })),
+	/**
+	 *  Deletes a calendar (never the default one). Its events move to the
+	 *  default calendar.
+	 */
+	deleteCalendar: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("delete_calendar", { id })),
+	setDefaultCalendar: (id: string) => typedError<Calendar, AppError>(__TAURI_INVOKE("set_default_calendar", { id })),
+	duplicateCalendar: (id: string, newName: string) => typedError<Calendar, AppError>(__TAURI_INVOKE("duplicate_calendar", { id, newName })),
+	/**
+	 *  Formats `days` with an UNSAVED definition (live preview in the editor).
+	 *  Problems come back in `issues` (per field) instead of as an error.
+	 */
+	previewCalendar: (definition: CalendarDefinition, days: JsInt[], style: DateStyle) => __TAURI_INVOKE<CalendarPreview>("preview_calendar", { definition, days, style }),
+	/**
+	 *  Number of days in a month (1-based) of an era year, for date editors.
+	 *  `calendar_id` null = the default calendar.
+	 */
+	daysInMonth: (calendarId: string | null, eraIndex: number, year: JsInt, month: number) => typedError<number, AppError>(__TAURI_INVOKE("days_in_month", { calendarId, eraIndex, year, month })),
+	/**  The calendar the world is displayed in (the default one until chosen). */
+	getDisplayCalendar: () => typedError<Calendar, AppError>(__TAURI_INVOKE("get_display_calendar")),
+	/**  Chooses the display calendar; null = follow the default calendar. */
+	setDisplayCalendar: (calendarId: string | null) => typedError<Calendar, AppError>(__TAURI_INVOKE("set_display_calendar", { calendarId })),
 	/**  Events overlapping the closed day window `[from_day, to_day]`, oldest first. */
 	listEvents: (fromDay: JsInt, toDay: JsInt) => typedError<EventSummary[], AppError>(__TAURI_INVOKE("list_events", { fromDay, toDay })),
 	getEvent: (entityId: string) => typedError<EventSummary, AppError>(__TAURI_INVOKE("get_event", { entityId })),
@@ -143,9 +188,10 @@ export const commands = {
 	createEvent: (name: string, startDay: JsInt, endDay: number | null) => typedError<EventSummary, AppError>(__TAURI_INVOKE("create_event", { name, startDay, endDay })),
 	/**
 	 *  Changes the dates (end must not be before start). `importance` (1-5) is
-	 *  left unchanged when null.
+	 *  left unchanged when null. `calendar_id` (optional) records the calendar the
+	 *  dates were entered in; the stored day numbers are absolute either way.
 	 */
-	updateEventDates: (entityId: string, startDay: JsInt, endDay: number | null, importance: number | null) => typedError<EventSummary, AppError>(__TAURI_INVOKE("update_event_dates", { entityId, startDay, endDay, importance })),
+	updateEventDates: (entityId: string, startDay: JsInt, endDay: number | null, importance: number | null, calendarId: string | null) => typedError<EventSummary, AppError>(__TAURI_INVOKE("update_event_dates", { entityId, startDay, endDay, importance, calendarId })),
 	/**  Entities involved in the event (`involved_in` links). */
 	listInvolved: (eventId: string) => typedError<EntitySummary[], AppError>(__TAURI_INVOKE("list_involved", { eventId })),
 	addInvolved: (eventId: string, entityId: string) => typedError<null, AppError>(__TAURI_INVOKE("add_involved", { eventId, entityId })),
@@ -294,6 +340,14 @@ export type CalendarDefinition = {
 	epochOffset?: number,
 	/**  Optional leap-year rule; `None` = every year has the same length. */
 	leap?: LeapRule | null,
+};
+
+/**  Result of previewing an unsaved definition. */
+export type CalendarPreview = {
+	/**  Empty when the definition is valid. */
+	issues: ValidationIssue[],
+	/**  One formatted string per requested day (empty when there are issues). */
+	labels: string[],
 };
 
 /**  How [`format`](crate::services::calendar::format) writes a date. */
@@ -758,6 +812,13 @@ export type SearchResult = {
 
 /**  Colour scheme preference. Serialised as `"light"`, `"dark"` or `"system"`. */
 export type Theme = "light" | "dark" | "system";
+
+/**  One problem found in a calendar definition, tied to a form field. */
+export type ValidationIssue = {
+	/**  Path of the field, e.g. `name`, `months[2].days`, `leap.rules[1].every`. */
+	field: string,
+	message: string,
+};
 
 /**  What the frontend needs to know about the currently open world. */
 export type WorldSummary = {

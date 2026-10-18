@@ -5,6 +5,7 @@ pub mod app;
 pub mod assets;
 pub mod backups;
 pub mod calendar;
+pub mod calendar_manager;
 pub mod dev_seed;
 pub mod documents;
 pub mod entities;

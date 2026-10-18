@@ -99,12 +99,21 @@ pub fn update_dates(
     start_day: i64,
     end_day: Option<i64>,
     importance: Option<i32>,
+    calendar_id: Option<&str>,
 ) -> AppResult<EventSummary> {
     validate_dates(start_day, end_day)?;
     if let Some(i) = importance {
         validate_importance(i)?;
     }
+    // Record which calendar the dates were entered in (display hint only:
+    // the stored days are absolute and do not depend on it).
+    if let Some(id) = calendar_id {
+        calendar::resolve(conn, Some(id))?;
+    }
     db::events::update_dates(conn, entity_id, start_day, end_day, importance)?;
+    if let Some(id) = calendar_id {
+        db::events::set_calendar(conn, entity_id, id)?;
+    }
     get(conn, entity_id)
 }
 
@@ -265,31 +274,31 @@ mod tests {
         let c = conn();
         let ev = create(&c, "Coronation", 10, None).unwrap();
 
-        let updated = update_dates(&c, &ev.entity_id, 20, Some(25), Some(4)).unwrap();
+        let updated = update_dates(&c, &ev.entity_id, 20, Some(25), Some(4), None).unwrap();
         assert_eq!(
             (updated.start_day, updated.end_day, updated.importance),
             (20, Some(25), 4)
         );
-        let updated = update_dates(&c, &ev.entity_id, -3, None, None).unwrap();
+        let updated = update_dates(&c, &ev.entity_id, -3, None, None, None).unwrap();
         assert_eq!(
             (updated.start_day, updated.end_day, updated.importance),
             (-3, None, 4)
         );
 
         assert!(matches!(
-            update_dates(&c, &ev.entity_id, 10, Some(9), None),
+            update_dates(&c, &ev.entity_id, 10, Some(9), None, None),
             Err(AppError::Validation(_))
         ));
         assert!(matches!(
-            update_dates(&c, &ev.entity_id, 10, None, Some(6)),
+            update_dates(&c, &ev.entity_id, 10, None, Some(6), None),
             Err(AppError::Validation(_))
         ));
         assert!(matches!(
-            update_dates(&c, &ev.entity_id, 10, None, Some(0)),
+            update_dates(&c, &ev.entity_id, 10, None, Some(0), None),
             Err(AppError::Validation(_))
         ));
         assert!(matches!(
-            update_dates(&c, "missing", 1, None, None),
+            update_dates(&c, "missing", 1, None, None, None),
             Err(AppError::NotFound(_))
         ));
         // The failed updates changed nothing.

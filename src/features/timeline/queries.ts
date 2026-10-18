@@ -103,7 +103,7 @@ export function useUpdateEventDates() {
       startDay: number;
       endDay: number | null;
       importance?: number | null;
-    }) => unwrap(commands.updateEventDates(entityId, startDay, endDay, importance)),
+    }) => unwrap(commands.updateEventDates(entityId, startDay, endDay, importance, null)),
     onSuccess: (event: EventSummary) => {
       queryClient.setQueryData(eventKeys.detail(event.entityId), event);
       // Not awaited, so autosave reports "Saved" as soon as the save is done.

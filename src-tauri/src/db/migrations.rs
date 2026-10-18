@@ -150,6 +150,17 @@ const MIGRATIONS_SLICE: &[M<'_>] = &[
         "ALTER TABLE maps ADD COLUMN background_style TEXT;
         ALTER TABLE map_layers ADD COLUMN locked INTEGER NOT NULL DEFAULT 0;",
     ),
+    // 010: custom calendars (Phase 11). Calendar names are unique per world
+    // (ignoring case). `world_settings` is a small key/value table; it
+    // stores which calendar the world is *displayed* in
+    // (key 'display_calendar_id').
+    M::up(
+        "CREATE UNIQUE INDEX idx_calendars_name ON calendars(name COLLATE NOCASE);
+        CREATE TABLE world_settings (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );",
+    ),
 ];
 
 pub const MIGRATIONS: Migrations<'_> = Migrations::from_slice(MIGRATIONS_SLICE);

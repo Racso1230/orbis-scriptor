@@ -37,7 +37,8 @@ pub fn create_event(
 }
 
 /// Changes the dates (end must not be before start). `importance` (1-5) is
-/// left unchanged when null.
+/// left unchanged when null. `calendar_id` (optional) records the calendar the
+/// dates were entered in; the stored day numbers are absolute either way.
 #[tauri::command]
 #[specta::specta]
 pub fn update_event_dates(
@@ -46,6 +47,7 @@ pub fn update_event_dates(
     start_day: JsInt,
     end_day: Option<JsInt>,
     importance: Option<i32>,
+    calendar_id: Option<String>,
 ) -> AppResult<EventSummary> {
     state.with_world(|w| {
         events::update_dates(
@@ -54,6 +56,7 @@ pub fn update_event_dates(
             start_day.0,
             end_day.map(|d| d.0),
             importance,
+            calendar_id.as_deref(),
         )
     })
 }

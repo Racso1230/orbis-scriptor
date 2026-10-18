@@ -97,3 +97,20 @@ pub fn update_dates(
     }
     Ok(())
 }
+
+/// Points every event of calendar `from` at calendar `to`; returns how many.
+pub fn reassign_calendar(conn: &Connection, from: &str, to: &str) -> AppResult<usize> {
+    Ok(conn.execute(
+        "UPDATE events SET calendar_id = ?2 WHERE calendar_id = ?1",
+        params![from, to],
+    )?)
+}
+
+/// Records which calendar the user entered an event's dates in.
+pub fn set_calendar(conn: &Connection, entity_id: &str, calendar_id: &str) -> AppResult<()> {
+    conn.execute(
+        "UPDATE events SET calendar_id = ?2 WHERE entity_id = ?1",
+        params![entity_id, calendar_id],
+    )?;
+    Ok(())
+}
