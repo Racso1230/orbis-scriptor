@@ -20,3 +20,19 @@ describe("pinLook", () => {
     expect(pinLook({ entityId: "1", entityType: "weird" }).glyph).toBe("•");
   });
 });
+
+describe("pinLook with a type look", () => {
+  it("prefers the colour from the type definition", () => {
+    const look = pinLook(
+      { entityId: "1", entityType: "custom-deity" },
+      { color: "#a855f7", glyph: "D" },
+    );
+    expect(look).toEqual({ color: "#a855f7", glyph: "D" });
+  });
+
+  it("stays grey when unlinked even with a type look", () => {
+    expect(
+      pinLook({ entityId: null, entityType: null }, { color: "#a855f7", glyph: "D" }).glyph,
+    ).toBe("?");
+  });
+});

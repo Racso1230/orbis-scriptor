@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/command";
 import { BlankMapDialog } from "@/features/maps/blank-map-dialog";
 import { EntityIcon } from "@/features/entities/entity-icon";
+import { lookFor } from "@/features/entities/type-look";
 import { useEntityTypes } from "@/features/entities/queries";
 import { useCreateAndOpen } from "@/features/entities/use-create-and-open";
 import { useOpenEntity } from "@/features/entities/use-open-entity";
@@ -52,7 +53,7 @@ export function NewEntityDialog({
                     void createAndOpen(t.key, t.label);
                   }}
                 >
-                  <EntityIcon icon={t.icon} />
+                  <EntityIcon icon={t.icon} style={{ color: lookFor(t).color }} />
                   {t.label}
                 </CommandItem>
               ))}

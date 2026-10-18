@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { Circle, Line, Text } from "react-konva";
+import { useTypeLooksStore } from "@/features/entities/type-look";
 import { anchorPoint } from "./geometry";
 import { ObjectShell } from "./object-shell";
 import { SELECTION_COLOR } from "./object-style";
@@ -26,7 +27,11 @@ export const MapPin = memo(function MapPin({
   handlers,
 }: ObjectRendererProps) {
   const point = anchorPoint(object.geometry);
-  const look = pinLook(object);
+  // The zustand store works inside the Konva root, where React Query's context does not.
+  const typeLook = useTypeLooksStore((s) =>
+    object.entityType ? s.looks[object.entityType] : undefined,
+  );
+  const look = pinLook(object, typeLook);
   if (!point) return null;
 
   return (

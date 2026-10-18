@@ -8,6 +8,7 @@ import { useCurrentWorld } from "@/features/worlds/queries";
 import { cn } from "@/lib/utils";
 import { useTabsStore } from "@/stores/tabs-store";
 import { EntityIcon } from "./entity-icon";
+import { lookFor } from "./type-look";
 import { useCreateEntity, useEntities, useEntityTypes } from "./queries";
 import { buildSidebarRows } from "./sidebar-rows";
 
@@ -121,6 +122,11 @@ export function EntitySidebar() {
                     aria-expanded={!row.collapsed}
                   >
                     <Chevron className="size-3.5 shrink-0" />
+                    <EntityIcon
+                      icon={row.type.icon}
+                      className="size-3.5 shrink-0"
+                      style={{ color: lookFor(row.type).color }}
+                    />
                     <span className="truncate">{row.type.plural}</span>
                     <span className="ml-auto font-normal tabular-nums">{row.count}</span>
                   </button>
@@ -152,7 +158,8 @@ export function EntitySidebar() {
               >
                 <EntityIcon
                   icon={type?.icon ?? ""}
-                  className="size-4 shrink-0 text-muted-foreground"
+                  className="size-4 shrink-0"
+                  style={{ color: lookFor(type).color }}
                 />
                 <span className="truncate">{row.entity.name}</span>
               </button>

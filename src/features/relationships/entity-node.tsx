@@ -4,7 +4,7 @@ import { ExternalLink } from "lucide-react";
 import { EntityIcon } from "@/features/entities/entity-icon";
 import { useEntityTypes } from "@/features/entities/queries";
 import { useOpenEntity } from "@/features/entities/use-open-entity";
-import { pinLook } from "@/features/maps/pin-style";
+import { lookFor } from "@/features/entities/type-look";
 import { cn } from "@/lib/utils";
 import type { EntityFlowNode } from "./flow-model";
 import { NODE_H, NODE_W } from "./layout";
@@ -21,7 +21,7 @@ function EntityNodeImpl({ id, data }: NodeProps<EntityFlowNode>) {
   const types = useEntityTypes();
   const open = useOpenEntity();
   const type = types.data?.find((t) => t.key === data.entityType);
-  const color = pinLook({ entityId: id, entityType: data.entityType }).color;
+  const color = lookFor(type).color;
 
   return (
     <div

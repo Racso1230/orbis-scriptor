@@ -21,6 +21,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { EntityIcon } from "@/features/entities/entity-icon";
+import { lookFor } from "@/features/entities/type-look";
 import { useCreateEntity, useEntityTypes } from "@/features/entities/queries";
 import { BlankMapDialog } from "@/features/maps/blank-map-dialog";
 import { useOpenEntity } from "@/features/entities/use-open-entity";
@@ -217,7 +218,7 @@ export function CommandPalette() {
                         openEntity(r.entityId);
                       }}
                     >
-                      <EntityIcon icon={type?.icon ?? ""} />
+                      <EntityIcon icon={type?.icon ?? ""} style={{ color: lookFor(type).color }} />
                       <div className="flex min-w-0 flex-col">
                         <span className="truncate">{r.name}</span>
                         {r.snippet && (

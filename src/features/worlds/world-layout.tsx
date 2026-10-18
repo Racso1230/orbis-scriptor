@@ -3,6 +3,7 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { CalendarDays, Map, MapPin, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useEntities, useEntityTypes } from "@/features/entities/queries";
+import { useSyncTypeLooks } from "@/features/entities/type-look";
 import { useCreateAndOpen } from "@/features/entities/use-create-and-open";
 import { CommandPalette } from "@/features/search/command-palette";
 import { EntitySidebar } from "@/features/entities/entity-sidebar";
@@ -12,6 +13,7 @@ import { TabBar } from "@/features/entities/tab-bar";
 /** Layout for everything inside an open world: sidebar + tabs + main area. */
 export function WorldLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  useSyncTypeLooks();
   return (
     <div className="flex flex-1 overflow-hidden">
       <aside className="flex w-64 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground">

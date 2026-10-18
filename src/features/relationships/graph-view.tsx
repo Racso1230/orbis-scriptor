@@ -4,7 +4,7 @@ import "@xyflow/react/dist/style.css";
 import { ArrowLeft, Filter, Focus, Network, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCreateEntity, useEntities, useEntityTypes } from "@/features/entities/queries";
-import { pinLook } from "@/features/maps/pin-style";
+import { lookFor } from "@/features/entities/type-look";
 import { EntityPickerDialog } from "@/features/maps/entity-picker-dialog";
 import { cn } from "@/lib/utils";
 import { EntityNode } from "./entity-node";
@@ -238,10 +238,8 @@ function GraphCanvas() {
                 pannable
                 zoomable
                 nodeColor={(node) =>
-                  pinLook({
-                    entityId: node.id,
-                    entityType: String(node.data["entityType"] ?? ""),
-                  }).color
+                  lookFor(types.data?.find((t) => t.key === String(node.data["entityType"] ?? "")))
+                    .color
                 }
               />
             </ReactFlow>
