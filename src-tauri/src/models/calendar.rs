@@ -38,6 +38,60 @@ pub struct CalendarDefinition {
     pub weekdays: Vec<String>,
     /// Sorted by `start_day`, at least one.
     pub eras: Vec<Era>,
+    /// The world's absolute day number on which this calendar's day 1 of
+    /// month 1 of its year 1 falls. 0 for the default calendar. Shifting it
+    /// moves how every day is *displayed*; no event ever moves.
+    /// (`serde(default)` keeps definitions stored before Phase 11 loading.)
+    #[serde(default)]
+    #[specta(type = specta_typescript::Number)]
+    pub epoch_offset: i64,
+    /// Optional leap-year rule; `None` = every year has the same length.
+    #[serde(default)]
+    pub leap: Option<LeapRule>,
+}
+
+/// Which month gains days in leap years, and which years are leap years.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LeapRule {
+    /// 0-based index of the month that gains the extra days.
+    pub month_index: u32,
+    /// How many days it gains in a leap year (1 to 31, usually 1).
+    pub extra_days: u32,
+    /// Gregorian-style cycles, listed from the smallest `every` to the
+    /// largest, each `every` dividing the next one. A year uses the *last*
+    /// (largest) cycle that divides its number and is leap when that cycle
+    /// has `add: true`; if no cycle divides it, it is a normal year.
+    pub rules: Vec<LeapCycle>,
+}
+
+/// One step of a leap rule, e.g. `{ every: 100, add: false }`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LeapCycle {
+    /// Years between matches (1 to 10000).
+    pub every: u32,
+    /// `true` = matching years are leap years; `false` = they are not.
+    pub add: bool,
+}
+
+/// One problem found in a calendar definition, tied to a form field.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ValidationIssue {
+    /// Path of the field, e.g. `name`, `months[2].days`, `leap.rules[1].every`.
+    pub field: String,
+    pub message: String,
+}
+
+/// Result of previewing an unsaved definition.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CalendarPreview {
+    /// Empty when the definition is valid.
+    pub issues: Vec<ValidationIssue>,
+    /// One formatted string per requested day (empty when there are issues).
+    pub labels: Vec<String>,
 }
 
 /// A calendar row.

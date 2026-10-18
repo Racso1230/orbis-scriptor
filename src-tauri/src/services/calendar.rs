@@ -2,39 +2,63 @@
 //!
 //! # Rules (read these before touching the code)
 //!
-//! * A day number is an `i64`. Day 0 is the 1st day of month 1 of the year
-//!   that contains day 0. Negative numbers are days before it.
-//! * Every year has the same length, `days_per_year` (the sum of the months).
-//!   "Absolute year" `a = day.div_euclid(days_per_year)`: days 0..D-1 are
-//!   a = 0, day -1 is a = -1, and so on. The day of the year is
-//!   `day.rem_euclid(days_per_year)`, which is always 0..D-1 even for
-//!   negative days (plain `/` and `%` round towards zero and would give
-//!   negative remainders; `div_euclid`/`rem_euclid` always round towards
-//!   minus infinity, which is what a calendar needs).
+//! * A day number is an `i64`. All calendars of a world share the same
+//!   *absolute* day numbers; a calendar is only a *view* that decides how a
+//!   day number is written. Converting between calendars therefore means
+//!   formatting the same day number with another calendar.
+//! * `epoch_offset` (E) is the absolute day number on which the calendar's
+//!   "year index 0" begins. The calendar-local day is `local = day - E`.
+//! * Year index `a` (an `i64`) counts calendar years from that epoch: local
+//!   days of year 0 are the first year, year -1 is the one before, and so on.
+//!   The *astronomical year number* used for leap tests is `Y = a + 1`
+//!   (so index 0 is year 1, index -1 is year 0, index -2 is year -1).
+//! * Year length: `base` (the sum of the month lengths) plus `extra_days`
+//!   when `Y` is a leap year. The extra days are added to the month
+//!   `leap.month_index`. Without a leap rule every year has `base` days.
+//! * Leap test: the rules are nested cycles ordered by `every` (each divides
+//!   the next). The *largest* `every` that divides `Y` decides; `add: true`
+//!   means leap. Gregorian = `[4 add, 100 remove, 400 add]`: 1900 is not
+//!   leap, 2000 and 2024 are. `rem_euclid` makes this work for negative
+//!   years too (plain `%` can return negative remainders).
+//! * Days before year `a` (from the start of index 0): `a * base +
+//!   extra * F(a)` where `F(n)` counts leap years among `Y = 1..=n` (negative
+//!   for negative `n`). `F` uses floor division (`div_euclid`) per cycle,
+//!   so there is no loop over years and huge values stay fast. The inverse
+//!   (which year holds a day) is a binary search on that increasing function.
 //! * Eras only change the *year number shown*. For the era that applies to a
-//!   day, `year = a - era_start_absolute_year + 1`, where
-//!   `era_start_absolute_year = era.start_day.div_euclid(days_per_year)`.
-//!   So with a first era starting at day 0: days 0..D-1 are year 1, day -1 is
-//!   year 0, day -D-1 is year -1 (astronomical numbering).
-//! * The era of a day is the last era whose `start_day <= day`. Days before
-//!   the first era's start still belong to the first era (with year <= 0
-//!   when that era starts at day 0).
-//! * Month and day-of-month always come from the day of the year, so an era
-//!   starting mid-year does not shift the months.
-//! * Weekday index is `day.rem_euclid(weekdays.len())`; day 0 is the first
-//!   weekday.
+//!   day, `year = a - era_year_index + 1`, where `era_year_index` is the year
+//!   index containing `era.start_day`. The era of a day is the last era with
+//!   `start_day <= day` (absolute day); days before the first era still
+//!   belong to the first era (years 0, -1, ...). Month and day-of-month come
+//!   from the position inside the year, so an era starting mid-year does not
+//!   shift the months. (Eras that count years backwards are not supported.)
+//! * Weekday index is `(day - E).rem_euclid(weekdays.len())`; weekdays carry
+//!   on unbroken across leap days.
 //!
-//! `to_date` and `from_date` are exact inverses for every valid day.
+//! With `epoch_offset = 0` and no leap rule every result is identical to the
+//! pre-Phase-11 behaviour. `to_date` and `from_date` are exact inverses.
 
 use rusqlite::Connection;
 
 use crate::db;
 use crate::error::{AppError, AppResult};
-use crate::models::calendar::{Calendar, CalendarDate, CalendarDefinition, DateStyle};
+use crate::models::calendar::{
+    Calendar, CalendarDate, CalendarDefinition, DateStyle, LeapCycle, LeapRule, ValidationIssue,
+};
 
 /// Day numbers beyond this are refused. It keeps all arithmetic far away from
 /// `i64` overflow (and inside the exact-integer range of JavaScript numbers).
 pub const MAX_DAY: i64 = 1_000_000_000_000;
+
+/// Limits enforced by [`validate_definition`].
+pub const MAX_MONTHS: usize = 100;
+pub const MAX_MONTH_DAYS: u32 = 1000;
+pub const MAX_WEEKDAYS: usize = 30;
+pub const MAX_NAME_LEN: usize = 60;
+pub const MAX_ABBREVIATION_LEN: usize = 10;
+pub const MAX_LEAP_RULES: usize = 8;
+pub const MAX_LEAP_EVERY: u32 = 10_000;
+pub const MAX_EXTRA_DAYS: u32 = 31;
 
 /// Checks a day number is inside +/- [`MAX_DAY`].
 pub fn check_day(day: i64) -> AppResult<()> {
@@ -47,50 +71,151 @@ pub fn check_day(day: i64) -> AppResult<()> {
     }
 }
 
-/// Checks that a definition can be used for conversions.
-pub fn validate(def: &CalendarDefinition) -> AppResult<()> {
-    if def.months.is_empty() {
-        return Err(AppError::Validation(
-            "A calendar needs at least one month".into(),
-        ));
+fn issue(field: impl Into<String>, message: impl Into<String>) -> ValidationIssue {
+    ValidationIssue {
+        field: field.into(),
+        message: message.into(),
     }
-    for month in &def.months {
-        if month.name.trim().is_empty() {
-            return Err(AppError::Validation("Month names cannot be empty".into()));
-        }
-        if month.days == 0 {
-            return Err(AppError::Validation(format!(
-                "Month \"{}\" must have at least one day",
-                month.name
-            )));
-        }
-    }
-    if def.eras.is_empty() {
-        return Err(AppError::Validation(
-            "A calendar needs at least one era".into(),
-        ));
-    }
-    for era in &def.eras {
-        if era.name.trim().is_empty() {
-            return Err(AppError::Validation("Era names cannot be empty".into()));
-        }
-        check_day(era.start_day)?;
-    }
-    // `windows(2)` yields every pair of neighbours: [a, b], [b, c], ...
-    if def
-        .eras
-        .windows(2)
-        .any(|w| w[0].start_day >= w[1].start_day)
-    {
-        return Err(AppError::Validation(
-            "Eras must be sorted by start day with no duplicates".into(),
-        ));
-    }
-    Ok(())
 }
 
-/// Length of one year in days: the sum of the month lengths (at least 1 so a
-/// bad definition can never cause a division by zero).
+/// Every problem in a definition, with the field it belongs to. An empty
+/// list means the definition is valid. (`Vec::new()` does not allocate, so
+/// calling this on every conversion is cheap for valid definitions.)
+pub fn validate_definition(def: &CalendarDefinition) -> Vec<ValidationIssue> {
+    let mut issues = Vec::new();
+
+    if def.months.is_empty() {
+        issues.push(issue("months", "A calendar needs at least one month"));
+    }
+    if def.months.len() > MAX_MONTHS {
+        issues.push(issue(
+            "months",
+            format!("A calendar can have at most {MAX_MONTHS} months"),
+        ));
+    }
+    for (i, month) in def.months.iter().enumerate() {
+        check_name(&mut issues, &format!("months[{i}].name"), &month.name);
+        if month.days == 0 || month.days > MAX_MONTH_DAYS {
+            issues.push(issue(
+                format!("months[{i}].days"),
+                format!("A month needs 1 to {MAX_MONTH_DAYS} days"),
+            ));
+        }
+    }
+
+    if def.weekdays.len() > MAX_WEEKDAYS {
+        issues.push(issue(
+            "weekdays",
+            format!("A calendar can have at most {MAX_WEEKDAYS} weekdays"),
+        ));
+    }
+    for (i, name) in def.weekdays.iter().enumerate() {
+        check_name(&mut issues, &format!("weekdays[{i}]"), name);
+    }
+
+    if def.eras.is_empty() {
+        issues.push(issue("eras", "A calendar needs at least one era"));
+    }
+    for (i, era) in def.eras.iter().enumerate() {
+        check_name(&mut issues, &format!("eras[{i}].name"), &era.name);
+        if let Some(abbr) = &era.abbreviation
+            && abbr.trim().chars().count() > MAX_ABBREVIATION_LEN
+        {
+            issues.push(issue(
+                format!("eras[{i}].abbreviation"),
+                format!("Abbreviations can have at most {MAX_ABBREVIATION_LEN} characters"),
+            ));
+        }
+        if check_day(era.start_day).is_err() {
+            issues.push(issue(
+                format!("eras[{i}].startDay"),
+                "The start day is out of range",
+            ));
+        }
+    }
+    // `windows(2)` yields every pair of neighbours: [a, b], [b, c], ...
+    for (i, w) in def.eras.windows(2).enumerate() {
+        if w[0].start_day >= w[1].start_day {
+            issues.push(issue(
+                format!("eras[{}].startDay", i + 1),
+                "Eras must be sorted by start day with no duplicates",
+            ));
+        }
+    }
+
+    if check_day(def.epoch_offset).is_err() {
+        issues.push(issue("epochOffset", "The epoch offset is out of range"));
+    }
+
+    if let Some(leap) = &def.leap {
+        validate_leap(def, leap, &mut issues);
+    }
+    issues
+}
+
+fn validate_leap(def: &CalendarDefinition, leap: &LeapRule, issues: &mut Vec<ValidationIssue>) {
+    if leap.month_index as usize >= def.months.len() {
+        issues.push(issue(
+            "leap.monthIndex",
+            "The leap month must be one of the calendar's months",
+        ));
+    }
+    if leap.extra_days == 0 || leap.extra_days > MAX_EXTRA_DAYS {
+        issues.push(issue(
+            "leap.extraDays",
+            format!("A leap year adds 1 to {MAX_EXTRA_DAYS} days"),
+        ));
+    }
+    if leap.rules.is_empty() || leap.rules.len() > MAX_LEAP_RULES {
+        issues.push(issue(
+            "leap.rules",
+            format!("A leap rule needs 1 to {MAX_LEAP_RULES} cycles"),
+        ));
+    }
+    for (i, rule) in leap.rules.iter().enumerate() {
+        if rule.every == 0 || rule.every > MAX_LEAP_EVERY {
+            issues.push(issue(
+                format!("leap.rules[{i}].every"),
+                format!("Cycles are 1 to {MAX_LEAP_EVERY} years long"),
+            ));
+        }
+    }
+    // Nesting: each cycle length must be a larger multiple of the previous
+    // one (so lengths are also distinct and ascending). The `!= 0` guard
+    // avoids a divide-by-zero panic on bad input.
+    for (i, w) in leap.rules.windows(2).enumerate() {
+        let nested = w[0].every != 0 && w[1].every > w[0].every && w[1].every % w[0].every == 0;
+        if !nested {
+            issues.push(issue(
+                format!("leap.rules[{}].every", i + 1),
+                "List cycles from smallest to largest; each must be a larger multiple of the one before (e.g. 4, 100, 400)",
+            ));
+        }
+    }
+}
+
+fn check_name(issues: &mut Vec<ValidationIssue>, field: &str, name: &str) {
+    let len = name.trim().chars().count();
+    if len == 0 {
+        issues.push(issue(field, "The name cannot be empty"));
+    } else if len > MAX_NAME_LEN {
+        issues.push(issue(
+            field,
+            format!("Names can have at most {MAX_NAME_LEN} characters"),
+        ));
+    }
+}
+
+/// Checks that a definition can be used for conversions (first problem only).
+pub fn validate(def: &CalendarDefinition) -> AppResult<()> {
+    match validate_definition(def).into_iter().next() {
+        None => Ok(()),
+        Some(first) => Err(AppError::Validation(first.message)),
+    }
+}
+
+/// Length of a normal (non-leap) year in days: the sum of the month lengths
+/// (at least 1 so a bad definition can never cause a division by zero).
 pub fn days_per_year(def: &CalendarDefinition) -> i64 {
     // `map` turns each month into its day count, `sum` adds them up.
     def.months
@@ -98,6 +223,105 @@ pub fn days_per_year(def: &CalendarDefinition) -> i64 {
         .map(|m| i64::from(m.days))
         .sum::<i64>()
         .max(1)
+}
+
+// ---- Leap years ----
+
+/// Is astronomical year number `y` a leap year under these cycles?
+/// The largest cycle that divides `y` decides.
+fn is_leap_year_number(rules: &[LeapCycle], y: i64) -> bool {
+    rules
+        .iter()
+        .rev()
+        .find(|r| r.every != 0 && y.rem_euclid(i64::from(r.every)) == 0)
+        .is_some_and(|r| r.add)
+}
+
+/// `F(n)`: how many leap years there are among year numbers `1..=n`
+/// (for negative `n`: minus the leap years among `n+1..=0`).
+///
+/// A year is decided by the largest cycle dividing it, so cycle `i` decides
+/// the years divisible by `every_i` but not by `every_{i+1}`. Because the
+/// cycles are nested those are `floor(n/every_i) - floor(n/every_{i+1})`
+/// years. `div_euclid` is floor division, which also behaves for negatives.
+fn leap_count(rules: &[LeapCycle], n: i64) -> i64 {
+    let mut total = 0;
+    for (i, rule) in rules.iter().enumerate() {
+        if !rule.add || rule.every == 0 {
+            continue;
+        }
+        let mut count = n.div_euclid(i64::from(rule.every));
+        if let Some(next) = rules.get(i + 1)
+            && next.every != 0
+        {
+            count -= n.div_euclid(i64::from(next.every));
+        }
+        total += count;
+    }
+    total
+}
+
+/// Is year index `a` (see module docs) a leap year in this calendar?
+pub fn is_leap_year(def: &CalendarDefinition, year_index: i64) -> bool {
+    match &def.leap {
+        Some(leap) => is_leap_year_number(&leap.rules, year_index + 1),
+        None => false,
+    }
+}
+
+/// Number of days in year index `a`.
+pub fn days_in_year(def: &CalendarDefinition, year_index: i64) -> i64 {
+    let extra = match &def.leap {
+        Some(leap) if is_leap_year(def, year_index) => i64::from(leap.extra_days),
+        _ => 0,
+    };
+    days_per_year(def) + extra
+}
+
+/// Number of days in month `month_index` (0-based) of year index `a`.
+fn month_length(def: &CalendarDefinition, year_index: i64, month_index: usize) -> i64 {
+    let mut len = i64::from(def.months[month_index].days);
+    if let Some(leap) = &def.leap
+        && leap.month_index as usize == month_index
+        && is_leap_year(def, year_index)
+    {
+        len += i64::from(leap.extra_days);
+    }
+    len
+}
+
+/// Local days from the start of year index 0 to the start of year index `a`
+/// (negative when `a` is negative). `base` is `days_per_year(def)`.
+fn days_before_year(def: &CalendarDefinition, base: i64, year_index: i64) -> i64 {
+    let leaps = match &def.leap {
+        Some(leap) => i64::from(leap.extra_days) * leap_count(&leap.rules, year_index),
+        None => 0,
+    };
+    year_index * base + leaps
+}
+
+/// The year index that contains local day `local`.
+fn year_index_of(def: &CalendarDefinition, base: i64, local: i64) -> i64 {
+    let extra = def.leap.as_ref().map_or(0, |l| i64::from(l.extra_days));
+    // Find the largest `a` with days_before_year(a) <= local, by binary
+    // search (the function strictly increases because every year has at
+    // least one day). `lo` always satisfies the condition, `hi` never does.
+    // Years are between `base` and `base + extra` days long, which gives
+    // safe starting bounds on each side of zero.
+    let (mut lo, mut hi) = if local >= 0 {
+        (local.div_euclid(base + extra), local.div_euclid(base) + 1)
+    } else {
+        (local.div_euclid(base), 0)
+    };
+    while hi - lo > 1 {
+        let mid = lo + (hi - lo) / 2;
+        if days_before_year(def, base, mid) <= local {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    lo
 }
 
 /// The era (index) that applies to `day`.
@@ -109,19 +333,35 @@ fn era_index_for(def: &CalendarDefinition, day: i64) -> usize {
         .unwrap_or(0)
 }
 
+/// Year index in which an era starts (so that year is the era's year 1).
+fn era_start_index(def: &CalendarDefinition, base: i64, era_index: usize) -> i64 {
+    year_index_of(def, base, def.eras[era_index].start_day - def.epoch_offset)
+}
+
+/// The year index containing absolute `day`, and that year's length. Handy
+/// for tests and the shared fixtures.
+pub fn year_info(def: &CalendarDefinition, day: i64) -> AppResult<(i64, i64)> {
+    validate(def)?;
+    check_day(day)?;
+    let base = days_per_year(def);
+    let index = year_index_of(def, base, day - def.epoch_offset);
+    Ok((index, days_in_year(def, index)))
+}
+
 /// Day number -> calendar date.
 pub fn to_date(def: &CalendarDefinition, day: i64) -> AppResult<CalendarDate> {
     validate(def)?;
     check_day(day)?;
-    let dpy = days_per_year(def);
-    let absolute_year = day.div_euclid(dpy);
-    let mut day_of_year = day.rem_euclid(dpy);
+    let base = days_per_year(def);
+    let local = day - def.epoch_offset;
+    let year_index = year_index_of(def, base, local);
+    let mut day_of_year = local - days_before_year(def, base, year_index);
 
     // Walk the months, subtracting each month's length until the rest fits.
     let mut month_index = 0;
-    for (i, month) in def.months.iter().enumerate() {
+    for i in 0..def.months.len() {
         month_index = i;
-        let len = i64::from(month.days);
+        let len = month_length(def, year_index, i);
         if day_of_year < len {
             break;
         }
@@ -130,13 +370,13 @@ pub fn to_date(def: &CalendarDefinition, day: i64) -> AppResult<CalendarDate> {
 
     let era_index = era_index_for(def, day);
     let era = &def.eras[era_index];
-    let year = absolute_year - era.start_day.div_euclid(dpy) + 1;
+    let year = year_index - era_start_index(def, base, era_index) + 1;
     let weekday = if def.weekdays.is_empty() {
         None
     } else {
         // `as usize` is safe: rem_euclid by a positive length is in range.
         let len = def.weekdays.len() as i64;
-        Some(def.weekdays[day.rem_euclid(len) as usize].clone())
+        Some(def.weekdays[local.rem_euclid(len) as usize].clone())
     };
 
     Ok(CalendarDate {
@@ -150,8 +390,48 @@ pub fn to_date(def: &CalendarDefinition, day: i64) -> AppResult<CalendarDate> {
     })
 }
 
+/// Resolves (era, era-relative year) to a year index, rejecting absurd years.
+fn year_index_from_era(
+    def: &CalendarDefinition,
+    base: i64,
+    era_index: u32,
+    year: i64,
+) -> AppResult<i64> {
+    if def.eras.get(era_index as usize).is_none() {
+        return Err(AppError::Validation(format!(
+            "Era {era_index} does not exist"
+        )));
+    }
+    let start = era_start_index(def, base, era_index as usize);
+    // Years beyond this would exceed MAX_DAY anyway; rejecting them first
+    // keeps every multiplication below far from overflow.
+    year.checked_sub(1)
+        .and_then(|y| y.checked_add(start))
+        .filter(|i| i.abs() <= 2 * MAX_DAY)
+        .ok_or_else(|| AppError::Validation("Year is out of range".into()))
+}
+
+/// Number of days in a month (1-based `month`) of the given era year; this
+/// is what a date editor needs to fill its day dropdown (leap years differ).
+pub fn days_in_month(
+    def: &CalendarDefinition,
+    era_index: u32,
+    year: i64,
+    month: u32,
+) -> AppResult<u32> {
+    validate(def)?;
+    let base = days_per_year(def);
+    let year_index = year_index_from_era(def, base, era_index, year)?;
+    let month_pos = (month as usize)
+        .checked_sub(1)
+        .filter(|&i| i < def.months.len())
+        .ok_or_else(|| AppError::Validation(format!("Month {month} does not exist")))?;
+    Ok(month_length(def, year_index, month_pos) as u32)
+}
+
 /// Calendar parts -> day number. `era_index` + `year` identify the year;
-/// `month` and `day` are 1-based and must exist in the calendar.
+/// `month` and `day` are 1-based and must exist in the calendar (a leap day
+/// only exists in leap years).
 pub fn from_date(
     def: &CalendarDefinition,
     era_index: u32,
@@ -160,38 +440,26 @@ pub fn from_date(
     day: u32,
 ) -> AppResult<i64> {
     validate(def)?;
-    let era = def
-        .eras
-        .get(era_index as usize)
-        .ok_or_else(|| AppError::Validation(format!("Era {era_index} does not exist")))?;
+    let base = days_per_year(def);
+    let year_index = year_index_from_era(def, base, era_index, year)?;
     let month_pos = (month as usize)
         .checked_sub(1)
         .filter(|&i| i < def.months.len())
         .ok_or_else(|| AppError::Validation(format!("Month {month} does not exist")))?;
-    let month_def = &def.months[month_pos];
-    if day == 0 || day > month_def.days {
+    let month_len = month_length(def, year_index, month_pos);
+    if day == 0 || i64::from(day) > month_len {
         return Err(AppError::Validation(format!(
-            "{} has {} days; day {day} does not exist",
-            month_def.name, month_def.days
+            "{} has {} days in that year; day {day} does not exist",
+            def.months[month_pos].name, month_len
         )));
     }
-
-    let dpy = days_per_year(def);
     // Days from the start of the year to the start of this month.
-    let before_month: i64 = def.months[..month_pos]
-        .iter()
-        .map(|m| i64::from(m.days))
+    let before_month: i64 = (0..month_pos)
+        .map(|i| month_length(def, year_index, i))
         .sum();
-    // Inverse of the year formula in `to_date`. Checked maths so absurd
-    // years return an error instead of overflowing.
-    let absolute_year = year
-        .checked_sub(1)
-        .and_then(|y| y.checked_add(era.start_day.div_euclid(dpy)))
-        .ok_or_else(|| AppError::Validation("Year is out of range".into()))?;
-    let result = absolute_year
-        .checked_mul(dpy)
-        .and_then(|d| d.checked_add(before_month + i64::from(day) - 1))
-        .ok_or_else(|| AppError::Validation("Year is out of range".into()))?;
+    let result =
+        def.epoch_offset + days_before_year(def, base, year_index) + before_month + i64::from(day)
+            - 1;
     check_day(result)?;
     Ok(result)
 }
@@ -245,7 +513,7 @@ pub fn resolve(conn: &Connection, calendar_id: Option<&str>) -> AppResult<Calend
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::models::calendar::{Era, Month};
+    use crate::models::calendar::{Era, LeapCycle, LeapRule, Month};
 
     fn month(name: &str, days: u32) -> Month {
         Month {
@@ -267,6 +535,8 @@ mod tests {
                 abbreviation: Some("AF".into()),
                 start_day: 0,
             }],
+            epoch_offset: 0,
+            leap: None,
         }
     }
 
@@ -287,6 +557,8 @@ mod tests {
                     start_day: 1000,
                 },
             ],
+            epoch_offset: 0,
+            leap: None,
         }
     }
 
@@ -436,5 +708,372 @@ mod tests {
     fn days_per_year_sums_months() {
         assert_eq!(days_per_year(&standard()), 360);
         assert_eq!(days_per_year(&odd()), 60);
+    }
+
+    // ---- Phase 11: leap rules and epoch offset ----
+
+    fn cycle(every: u32, add: bool) -> LeapCycle {
+        LeapCycle { every, add }
+    }
+
+    fn gregorian_rules() -> Vec<LeapCycle> {
+        vec![cycle(4, true), cycle(100, false), cycle(400, true)]
+    }
+
+    /// Real-world month lengths with a leap day at the end of February. The
+    /// era starts at the epoch, so the year shown equals the leap-test year.
+    fn gregorian(epoch_offset: i64) -> CalendarDefinition {
+        let lengths = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+        CalendarDefinition {
+            months: lengths
+                .iter()
+                .enumerate()
+                .map(|(i, d)| month(&format!("M{}", i + 1), *d))
+                .collect(),
+            weekdays: ["A", "B", "C", "D", "E", "F", "G"]
+                .iter()
+                .map(|s| (*s).to_owned())
+                .collect(),
+            eras: vec![Era {
+                name: "Common".into(),
+                abbreviation: Some("CE".into()),
+                start_day: epoch_offset,
+            }],
+            epoch_offset,
+            leap: Some(LeapRule {
+                month_index: 1,
+                extra_days: 1,
+                rules: gregorian_rules(),
+            }),
+        }
+    }
+
+    /// A few odd rule sets for the brute-force comparisons.
+    fn rule_sets() -> Vec<Vec<LeapCycle>> {
+        vec![
+            gregorian_rules(),
+            vec![cycle(4, true)],
+            vec![cycle(3, true), cycle(9, false), cycle(27, true)],
+            vec![cycle(1, true), cycle(7, false)],
+            vec![cycle(5, false), cycle(10, true)],
+        ]
+    }
+
+    fn with_rules(rules: Vec<LeapCycle>) -> CalendarDefinition {
+        let mut def = odd(); // 60-day year, 3 months
+        def.leap = Some(LeapRule {
+            month_index: 1,
+            extra_days: 3,
+            rules,
+        });
+        def
+    }
+
+    #[test]
+    fn leap_year_predicate_matches_gregorian() {
+        let rules = gregorian_rules();
+        for (year, leap) in [
+            (1900, false),
+            (2000, true),
+            (2024, true),
+            (2023, false),
+            (2100, false),
+            (0, true),
+            (-4, true),
+            (-100, false),
+            (-400, true),
+            (-1, false),
+        ] {
+            assert_eq!(is_leap_year_number(&rules, year), leap, "year {year}");
+        }
+        // Year index = year number - 1.
+        assert!(is_leap_year(&gregorian(0), 1999));
+        assert!(!is_leap_year(&standard(), 3));
+    }
+
+    #[test]
+    fn days_before_year_matches_a_brute_force_loop() {
+        for rules in rule_sets() {
+            let def = with_rules(rules);
+            let base = days_per_year(&def);
+            // Walk forwards from index 0 ...
+            let mut total = 0;
+            for a in 0..=2000 {
+                assert_eq!(days_before_year(&def, base, a), total, "a = {a}");
+                total += days_in_year(&def, a);
+            }
+            // ... and backwards.
+            let mut total = 0;
+            for a in (-2000..=0).rev() {
+                assert_eq!(days_before_year(&def, base, a), total, "a = {a}");
+                total -= days_in_year(&def, a - 1);
+            }
+        }
+    }
+
+    #[test]
+    fn gregorian_month_lengths_and_leap_days() {
+        let def = gregorian(0);
+        // Year 2024 is leap: February has 29 days; 2023 and 1900 do not.
+        assert_eq!(days_in_month(&def, 0, 2024, 2).unwrap(), 29);
+        assert_eq!(days_in_month(&def, 0, 2023, 2).unwrap(), 28);
+        assert_eq!(days_in_month(&def, 0, 1900, 2).unwrap(), 28);
+        assert_eq!(days_in_month(&def, 0, 2000, 2).unwrap(), 29);
+        assert_eq!(days_in_month(&def, 0, 2024, 3).unwrap(), 31);
+        assert!(days_in_month(&def, 0, 2024, 13).is_err());
+
+        let leap_day = from_date(&def, 0, 2024, 2, 29).unwrap();
+        let next = to_date(&def, leap_day + 1).unwrap();
+        assert_eq!((next.month, next.day), (3, 1));
+        assert!(from_date(&def, 0, 2023, 2, 29).is_err());
+        assert!(from_date(&def, 0, 1900, 2, 29).is_err());
+        // 366 days in a leap year, 365 otherwise.
+        let jan1 = from_date(&def, 0, 2024, 1, 1).unwrap();
+        let next_jan1 = from_date(&def, 0, 2025, 1, 1).unwrap();
+        assert_eq!(next_jan1 - jan1, 366);
+        assert_eq!(
+            from_date(&def, 0, 2023, 1, 1).unwrap() + 365,
+            jan1,
+            "2023 has 365 days"
+        );
+    }
+
+    #[test]
+    fn round_trips_with_leap_rules() {
+        for rules in rule_sets() {
+            let def = with_rules(rules);
+            for day in -30_000..=30_000 {
+                round_trip(&def, day);
+            }
+        }
+        let def = gregorian(12_345);
+        for day in -200_000..=200_000 {
+            round_trip(&def, day);
+        }
+    }
+
+    #[test]
+    fn round_trips_extreme_values_with_leap_rules() {
+        // One-day months with a 31-day leap month: years are 1 or 32 days
+        // long, the hardest case for the year search bounds.
+        let tiny = CalendarDefinition {
+            months: vec![month("Only", 1)],
+            weekdays: vec![],
+            eras: vec![Era {
+                name: "E".into(),
+                abbreviation: None,
+                start_day: 0,
+            }],
+            epoch_offset: -777,
+            leap: Some(LeapRule {
+                month_index: 0,
+                extra_days: 31,
+                rules: vec![cycle(3, true)],
+            }),
+        };
+        for def in [
+            gregorian(0),
+            gregorian(-5_000_000),
+            with_rules(gregorian_rules()),
+            tiny,
+        ] {
+            for day in [
+                -MAX_DAY,
+                -MAX_DAY + 1,
+                -999_999_999,
+                -1_000_000_007,
+                999_999_937,
+                MAX_DAY - 1,
+                MAX_DAY,
+                123_456_789_012,
+                -987_654_321_098,
+            ] {
+                round_trip(&def, day);
+            }
+        }
+        // Dense check around a huge value too.
+        let def = gregorian(0);
+        for day in 999_999_000_000..999_999_002_000 {
+            round_trip(&def, day);
+        }
+    }
+
+    #[test]
+    fn epoch_offset_shifts_the_view_not_the_days() {
+        // Same shape, shifted by 100 days: day 100 is day 1 of year 1.
+        let plain = standard();
+        let mut shifted = standard();
+        shifted.epoch_offset = 100;
+        shifted.eras[0].start_day = 100;
+        let at = |def: &CalendarDefinition, day| {
+            let d = to_date(def, day).unwrap();
+            (d.year, d.month, d.day)
+        };
+        assert_eq!(at(&shifted, 100), (1, 1, 1));
+        assert_eq!(at(&shifted, 99), (0, 12, 30));
+        assert_eq!(at(&shifted, 100 + 360), (2, 1, 1));
+        assert_eq!(at(&plain, 100), (1, 4, 11));
+        // Weekdays follow the offset: the epoch day is the first weekday.
+        assert_eq!(
+            to_date(&shifted, 100).unwrap().weekday.as_deref(),
+            Some("A")
+        );
+        assert_eq!(to_date(&shifted, 99).unwrap().weekday.as_deref(), Some("G"));
+        // The same absolute day lies in different years in the two views.
+        let day = from_date(&shifted, 0, 5, 12, 3).unwrap();
+        assert_eq!(day, 100 + 4 * 360 + 330 + 2);
+        assert_ne!(at(&plain, day).0, 5);
+    }
+
+    #[test]
+    fn eras_use_the_calendar_own_year_index() {
+        // Epoch 1000, era 2 starts mid-year at day 1000 + 360 * 3 + 40.
+        let mut def = standard();
+        def.epoch_offset = 1000;
+        def.eras = vec![
+            Era {
+                name: "One".into(),
+                abbreviation: None,
+                start_day: 1000,
+            },
+            Era {
+                name: "Two".into(),
+                abbreviation: None,
+                start_day: 1000 + 360 * 3 + 40,
+            },
+        ];
+        let d = to_date(&def, 1000 + 360 * 3 + 40).unwrap();
+        assert_eq!((d.era_index, d.year, d.month), (1, 1, 2));
+        assert_eq!(to_date(&def, 1000 + 360 * 4).unwrap().year, 2);
+        round_trip(&def, 1000 + 360 * 3 + 40);
+    }
+
+    #[test]
+    fn weekdays_continue_across_leap_days() {
+        let def = gregorian(0);
+        let leap_day = from_date(&def, 0, 2024, 2, 29).unwrap();
+        let names = ["A", "B", "C", "D", "E", "F", "G"];
+        let index = |day| {
+            let w = to_date(&def, day).unwrap().weekday.unwrap();
+            names.iter().position(|n| *n == w).unwrap()
+        };
+        for day in leap_day - 10..leap_day + 10 {
+            assert_eq!((index(day) + 1) % 7, index(day + 1));
+        }
+    }
+
+    #[test]
+    fn leap_cycles_can_remove_and_nest_deeply() {
+        // [every 2 add, every 6 remove, every 12 add]: Y%12==0 leap,
+        // Y%6==0 not, other even years leap.
+        let rules = vec![cycle(2, true), cycle(6, false), cycle(12, true)];
+        assert!(is_leap_year_number(&rules, 4));
+        assert!(!is_leap_year_number(&rules, 6));
+        assert!(!is_leap_year_number(&rules, 18));
+        assert!(is_leap_year_number(&rules, 12));
+        assert!(!is_leap_year_number(&rules, 5));
+        let def = with_rules(rules);
+        for day in -5_000..5_000 {
+            round_trip(&def, day);
+        }
+    }
+
+    fn fields(def: &CalendarDefinition) -> Vec<String> {
+        validate_definition(def)
+            .into_iter()
+            .map(|i| i.field)
+            .collect()
+    }
+
+    #[test]
+    fn validation_reports_field_level_issues() {
+        assert!(validate_definition(&standard()).is_empty());
+        assert!(validate_definition(&gregorian(0)).is_empty());
+
+        let mut def = standard();
+        def.months[2].days = 0;
+        def.months[3].name = "  ".into();
+        def.months[4].days = MAX_MONTH_DAYS + 1;
+        def.eras[0].abbreviation = Some("TOOLONGABBREV".into());
+        def.epoch_offset = MAX_DAY + 1;
+        def.weekdays = (0..31).map(|i| format!("W{i}")).collect();
+        let f = fields(&def);
+        for expected in [
+            "months[2].days",
+            "months[3].name",
+            "months[4].days",
+            "eras[0].abbreviation",
+            "epochOffset",
+            "weekdays",
+        ] {
+            assert!(f.iter().any(|x| x == expected), "{expected} in {f:?}");
+        }
+
+        let mut def = standard();
+        def.months = (0..101).map(|i| month(&format!("m{i}"), 1)).collect();
+        def.weekdays.clear(); // no weekdays is allowed
+        assert_eq!(fields(&def), vec!["months"]);
+
+        let mut def = standard();
+        def.eras[0].name = "x".repeat(61);
+        assert_eq!(fields(&def), vec!["eras[0].name"]);
+    }
+
+    #[test]
+    fn validation_checks_leap_rules() {
+        let leap = |month_index, extra_days, rules| {
+            let mut def = standard();
+            def.leap = Some(LeapRule {
+                month_index,
+                extra_days,
+                rules,
+            });
+            def
+        };
+        assert!(validate_definition(&leap(11, 31, gregorian_rules())).is_empty());
+        assert_eq!(
+            fields(&leap(12, 1, gregorian_rules())),
+            vec!["leap.monthIndex"]
+        );
+        assert_eq!(
+            fields(&leap(0, 0, gregorian_rules())),
+            vec!["leap.extraDays"]
+        );
+        assert_eq!(
+            fields(&leap(0, 32, gregorian_rules())),
+            vec!["leap.extraDays"]
+        );
+        assert_eq!(fields(&leap(0, 1, vec![])), vec!["leap.rules"]);
+        assert_eq!(
+            fields(&leap(0, 1, vec![cycle(1, true); 9]))
+                .first()
+                .map(String::as_str),
+            Some("leap.rules")
+        );
+        assert_eq!(
+            fields(&leap(0, 1, vec![cycle(0, true)])),
+            vec!["leap.rules[0].every"]
+        );
+        assert_eq!(
+            fields(&leap(0, 1, vec![cycle(10_001, true)])),
+            vec!["leap.rules[0].every"]
+        );
+        // Duplicate, descending and non-nested cycles are refused.
+        for rules in [
+            vec![cycle(4, true), cycle(4, false)],
+            vec![cycle(100, false), cycle(4, true)],
+            vec![cycle(4, true), cycle(6, true)],
+        ] {
+            assert_eq!(fields(&leap(0, 1, rules)), vec!["leap.rules[1].every"]);
+        }
+        assert!(to_date(&leap(0, 0, gregorian_rules()), 0).is_err());
+    }
+
+    #[test]
+    fn stored_definitions_without_phase_11_fields_still_load() {
+        let json = r#"{"months":[{"name":"A","days":30}],"weekdays":[],"eras":[{"name":"E","abbreviation":null,"startDay":0}]}"#;
+        let def: CalendarDefinition = serde_json::from_str(json).unwrap();
+        assert_eq!(def.epoch_offset, 0);
+        assert!(def.leap.is_none());
     }
 }

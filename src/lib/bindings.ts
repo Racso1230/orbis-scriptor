@@ -285,6 +285,15 @@ export type CalendarDefinition = {
 	weekdays: string[],
 	/**  Sorted by `start_day`, at least one. */
 	eras: Era[],
+	/**
+	 *  The world's absolute day number on which this calendar's day 1 of
+	 *  month 1 of its year 1 falls. 0 for the default calendar. Shifting it
+	 *  moves how every day is *displayed*; no event ever moves.
+	 *  (`serde(default)` keeps definitions stored before Phase 11 loading.)
+	 */
+	epochOffset?: number,
+	/**  Optional leap-year rule; `None` = every year has the same length. */
+	leap?: LeapRule | null,
 };
 
 /**  How [`format`](crate::services::calendar::format) writes a date. */
@@ -464,6 +473,29 @@ export type GraphNode = {
  *  `number`. `serde(transparent)` makes it travel as a bare number in JSON.
  */
 export type JsInt = number;
+
+/**  One step of a leap rule, e.g. `{ every: 100, add: false }`. */
+export type LeapCycle = {
+	/**  Years between matches (1 to 10000). */
+	every: number,
+	/**  `true` = matching years are leap years; `false` = they are not. */
+	add: boolean,
+};
+
+/**  Which month gains days in leap years, and which years are leap years. */
+export type LeapRule = {
+	/**  0-based index of the month that gains the extra days. */
+	monthIndex: number,
+	/**  How many days it gains in a leap year (1 to 31, usually 1). */
+	extraDays: number,
+	/**
+	 *  Gregorian-style cycles, listed from the smallest `every` to the
+	 *  largest, each `every` dividing the next one. A year uses the *last*
+	 *  (largest) cycle that divides its number and is leap when that cycle
+	 *  has `add: true`; if no cycle divides it, it is a normal year.
+	 */
+	rules: LeapCycle[],
+};
 
 /**  One place where an entity appears as a pin ("appears on maps"). */
 export type MapAppearance = {
