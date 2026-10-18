@@ -65,6 +65,9 @@ export function useUpdateEntity() {
         queryClient.invalidateQueries({ queryKey: ["maps"] }),
         // Timeline events show the entity name and vanish with the entity.
         queryClient.invalidateQueries({ queryKey: ["events"] }),
+        // Relationship lists and graphs show the entity name and vanish with it.
+        queryClient.invalidateQueries({ queryKey: ["relationships"] }),
+        queryClient.invalidateQueries({ queryKey: ["graph"] }),
       ]);
     },
   });
@@ -83,6 +86,9 @@ export function useDeleteEntity() {
         queryClient.invalidateQueries({ queryKey: ["maps"] }),
         // Timeline events show the entity name and vanish with the entity.
         queryClient.invalidateQueries({ queryKey: ["events"] }),
+        // Relationship lists and graphs show the entity name and vanish with it.
+        queryClient.invalidateQueries({ queryKey: ["relationships"] }),
+        queryClient.invalidateQueries({ queryKey: ["graph"] }),
       ]);
     },
   });

@@ -1,0 +1,81 @@
+import type { GraphEdge, RelationshipKindDef } from "@/lib/bindings";
+
+/** A small slice of the real catalog, enough to exercise direction and type rules. */
+export const KINDS: RelationshipKindDef[] = [
+  {
+    key: "parent_of",
+    forwardLabel: "parent of",
+    inverseLabel: "child of",
+    symmetric: false,
+    category: "family",
+    sourceTypes: ["character"],
+    targetTypes: ["character"],
+    needsLabel: false,
+  },
+  {
+    key: "spouse_of",
+    forwardLabel: "spouse of",
+    inverseLabel: "spouse of",
+    symmetric: true,
+    category: "family",
+    sourceTypes: ["character"],
+    targetTypes: ["character"],
+    needsLabel: false,
+  },
+  {
+    key: "member_of",
+    forwardLabel: "member of",
+    inverseLabel: "has member",
+    symmetric: false,
+    category: "political",
+    sourceTypes: ["character"],
+    targetTypes: ["faction"],
+    needsLabel: false,
+  },
+  {
+    key: "located_in",
+    forwardLabel: "located in",
+    inverseLabel: "contains",
+    symmetric: false,
+    category: "place",
+    sourceTypes: ["character", "faction", "item", "location"],
+    targetTypes: ["location"],
+    needsLabel: false,
+  },
+  {
+    key: "related_to",
+    forwardLabel: "related to",
+    inverseLabel: "related to",
+    symmetric: true,
+    category: "other",
+    sourceTypes: [],
+    targetTypes: [],
+    needsLabel: false,
+  },
+  {
+    key: "custom",
+    forwardLabel: "custom",
+    inverseLabel: "custom",
+    symmetric: false,
+    category: "other",
+    sourceTypes: [],
+    targetTypes: [],
+    needsLabel: true,
+  },
+];
+
+export const edge = (
+  id: string,
+  source: string,
+  target: string,
+  kind: string,
+  symmetric = false,
+): GraphEdge => ({
+  id,
+  source,
+  target,
+  kind,
+  label: kind,
+  symmetric,
+  category: "family",
+});
