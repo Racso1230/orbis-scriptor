@@ -330,7 +330,7 @@ CREATE INDEX idx_events_start ON events(start_day);
 
 ### Phase 13 — Import and quality of life (v0.4)
 
-- [ ] Import from a Markdown/Obsidian vault
+- [x] Import from a Markdown/Obsidian vault
   - Wizard: pick a vault folder, see a preview (notes per type, images, tags, warnings), map folders that match no type to an existing type or a new custom type, then import with progress
   - Pass 1 creates an entity per `.md` note (type from `type_key`, then `type`, then the folder name, else the default type); pass 2 converts the bodies so `[[Target]]`, `[[Target|Alias]]` and `[[Target#Heading]]` become mentions (resolved by file name or `aliases`, case-insensitive); unresolved links stay as text, or become Note entities when asked
   - Markdown becomes lore: headings, lists (nested, tasks), blockquotes and `> [!callouts]`, code, rules, GFM tables, bold/italic/strike/code/links; `%%comments%%` are dropped; `#tags` become entity tags; `![[image.png]]` embeds become gallery images
@@ -338,19 +338,23 @@ CREATE INDEX idx_events_start ON events(start_day);
   - Runs on a background thread in one transaction (all or nothing) with `import-progress` / `import-finished` events
   - **Tests:** Markdown to TipTap converter (every node, mark and Obsidian syntax), TipTap to Markdown to TipTap round trip, front matter per field kind, relationship re-import, vault walking and size limits, preview counts, atomic rollback, and a full round trip: export the sample world, import it into a fresh world and compare entities, fields, tags, relationships, mentions, event dates and gallery images
   - **Acceptance:** export the sample world to Markdown, import that vault into a new world and see the same entities, fields, tags, links and lore; import a hand-made Obsidian vault with nested folders, `#tags` and images
-- [ ] Tags, favourites, recently edited
+- [x] Tags, favourites, recently edited
   - Tags: case-insensitive unique names of 1 to 40 characters (letters, digits, `-`, `_`, spaces and `/` for nested tags such as `places/cities`), optional colour; rename merges into an existing tag; deleting a tag untags its entities
   - Sidebar filter by one or several tags (any/all); `tag:name` in search narrows results (and includes nested tags); tags are searchable text and written to the Markdown export
   - Favourites: a star per entity and a favourites list; recently edited: entities ordered by last change (entity edits, lore saves, event date changes)
   - **Tests:** tag rules (trim, length, characters, nesting, case), set/replace/rename/merge/delete, `tag:` search, FTS migration keeps data, favourites and recent ordering (lore save bumps the time)
   - **Acceptance:** tag and favourite entities, filter the sidebar by tag, search `tag:royalty dragon`, and see the most recently edited entities first
-- [ ] Image galleries and portraits on entity pages
+- [x] Image galleries and portraits on entity pages
   - Any entity can hold several images (imported files or assets already in the world such as map backgrounds) with captions and an order; one image can be the portrait, shown as an avatar in the sidebar, graph and pins
   - Removing an image deletes its file only when no other gallery or map uses it; gallery images and the portrait are exported to Markdown
   - **Tests:** add/reorder/caption/remove, portrait set and clear (at most one), asset reference counting, cascade on entity delete, export with images
   - **Acceptance:** set a portrait and add gallery images to a character, reorder them, remove one, and see the portrait in the sidebar
 
-**Backend status (done):** migration 012 (`tags`, `entity_tags`, `entities.favorite`, `entity_images`, search index recreated with a `tags` column); commands `list_tags`, `set_entity_tags`, `rename_tag` (merges), `delete_tag`, `set_tag_color`, `list_entities_by_tag`, `set_favorite`, `list_favorites`, `list_recent`, gallery commands (`add_entity_image`, `add_entity_image_from_asset`, `list_entity_images`, `update_entity_image`, `reorder_entity_images`, `remove_entity_image`, `set_portrait`, `list_portraits`), `preview_import` and `import_vault` with `import-progress` / `import-finished` events; `tag:` search filter; entity summaries carry `favorite`, `tags` and `portrait`; Markdown export writes tags, gallery and a manifest of custom types in `.orbis-export`; the sample world has tags, a favourite and a generated portrait. The UI items above are not ticked: they wait for the frontend.
+**Backend status (done):** migration 012 (`tags`, `entity_tags`, `entities.favorite`, `entity_images`, search index recreated with a `tags` column); commands `list_tags`, `set_entity_tags`, `rename_tag` (merges), `delete_tag`, `set_tag_color`, `list_entities_by_tag`, `set_favorite`, `list_favorites`, `list_recent`, gallery commands (`add_entity_image`, `add_entity_image_from_asset`, `list_entity_images`, `update_entity_image`, `reorder_entity_images`, `remove_entity_image`, `set_portrait`, `list_portraits`), `preview_import` and `import_vault` with `import-progress` / `import-finished` events; `tag:` search filter; entity summaries carry `favorite`, `tags` and `portrait`; Markdown export writes tags, gallery and a manifest of custom types in `.orbis-export`; the sample world has tags, a favourite and a generated portrait.
+
+**Frontend status (done):** a tag editor on every entity page (chips, Enter or comma to add, a leading `#` is dropped, autocomplete from existing tags, inline validation); a "Filter by tag" panel in the sidebar (any/all, nested tags match their parent); a Tags screen (`/world/tags`: counts, rename with a merge warning, colour, delete with confirmation, the entities of a tag); `tag:` suggestions and tags in the palette; a star on the entity page and on sidebar rows, "Favourites" and "Recently edited" sections at the top of the sidebar and in the empty palette; an entity gallery (add several images, captions, order with earlier/later buttons, remove with confirmation, set or clear the portrait, a lightbox with arrow keys and Esc); portraits as avatars in the entity header, sidebar, palette and graph nodes; print views with tags, portrait and gallery thumbnails; and the import wizard (gear menu, palette and the welcome page's "Import vault…", which creates a new world first): folder, options, preview with a type mapping for every folder that matches no type (existing type or a new custom type), then a progress bar and a result summary with warnings. The import keeps running when the window is hidden.
+
+**Not done (optional items):** portraits on map pins (pins are drawn in a separate Konva root; the type glyph stays) and task lists / highlight in the lore editor (the importer downgrades them to text).
 
 ### Later
 
