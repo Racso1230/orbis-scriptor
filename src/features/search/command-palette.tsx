@@ -5,6 +5,7 @@ import {
   CalendarDays,
   Database,
   FileDown,
+  FileUp,
   FlaskConical,
   Network,
   Plus,
@@ -12,6 +13,8 @@ import {
   RefreshCw,
   Shapes,
   Settings,
+  Star,
+  Tags,
   X,
 } from "lucide-react";
 import {
@@ -23,9 +26,15 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { EntityIcon } from "@/features/entities/entity-icon";
-import { lookFor } from "@/features/entities/type-look";
-import { useCreateEntity, useEntityTypes } from "@/features/entities/queries";
+import {
+  useCreateEntity,
+  useEntities,
+  useEntityTypes,
+  useFavorites,
+  useRecent,
+} from "@/features/entities/queries";
+import { EntityAvatar } from "@/features/entities/entity-avatar";
+import { useTags } from "@/features/tags/queries";
 import { BlankMapDialog } from "@/features/maps/blank-map-dialog";
 import { useOpenEntity } from "@/features/entities/use-open-entity";
 import { runUpdateCheck } from "@/features/updates/check-for-updates";
@@ -33,7 +42,9 @@ import { useOpenGraph } from "@/features/relationships/use-open-graph";
 import { useOpenTimeline } from "@/features/timeline/use-open-timeline";
 import { useCloseWorld } from "@/features/worlds/queries";
 import { useExportStore } from "@/features/export/export-store";
+import { useImportStore } from "@/features/importer/import-store";
 import { HighlightedSnippet } from "./highlighted-snippet";
+import { activeTagToken, applyTagSuggestion, matchTagNames } from "./tag-token";
 import { useSearch } from "./queries";
 import {
   SEED_COUNT,
@@ -60,6 +71,11 @@ export function CommandPalette() {
   const search = useSearch(query);
   const maintenance = useIndexMaintenance();
   const openExport = useExportStore((s) => s.openDialog);
+  const openImport = useImportStore((s) => s.openDialog);
+  const tags = useTags();
+  const entities = useEntities();
+  const favorites = useFavorites();
+  const recent = useRecent();
 
   function changeOpen(next: boolean) {
     setOpen(next);
@@ -81,6 +97,16 @@ export function CommandPalette() {
 
   const needle = query.trim().toLowerCase();
   const results = needle ? (search.data ?? []) : [];
+  // `tag:par` at the end of the query: offer the matching tags.
+  const tagToken = activeTagToken(query);
+  const tagMatches = tagToken
+    ? matchTagNames(
+        (tags.data ?? []).map((t) => t.name),
+        tagToken.partial,
+      )
+    : [];
+  const tagsOf = new Map((entities.data ?? []).map((e) => [e.id, e.tags] as const));
+  const portraitOf = new Map((entities.data ?? []).map((e) => [e.id, e.portrait] as const));
 
   type Action = { id: string; label: string; icon: React.ReactNode; run: () => void };
   const actions: Action[] = [
@@ -138,6 +164,24 @@ export function CommandPalette() {
       run: () => {
         changeOpen(false);
         void navigate({ to: "/world/types" });
+      },
+    },
+    {
+      id: "tags",
+      label: "Tags",
+      icon: <Tags />,
+      run: () => {
+        changeOpen(false);
+        void navigate({ to: "/world/tags" });
+      },
+    },
+    {
+      id: "import-vault",
+      label: "Import Markdown / Obsidian vault…",
+      icon: <FileUp />,
+      run: () => {
+        changeOpen(false);
+        openImport();
       },
     },
     {
@@ -234,8 +278,65 @@ export function CommandPalette() {
             placeholder="Search entities, or type a command…"
           />
           <CommandList>
-            {results.length === 0 && visibleActions.length === 0 && (
+            {results.length === 0 && visibleActions.length === 0 && tagMatches.length === 0 && (
               <CommandEmpty>No results.</CommandEmpty>
+            )}
+            {tagMatches.length > 0 && tagToken && (
+              <CommandGroup heading="Tags">
+                {tagMatches.map((name) => (
+                  <CommandItem
+                    key={name}
+                    value={`tag-${name}`}
+                    onSelect={() => setQuery(applyTagSuggestion(query, tagToken, name))}
+                  >
+                    <Tags />
+                    {name}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            {needle === "" && (favorites.data?.length ?? 0) > 0 && (
+              <CommandGroup heading="Favourites">
+                {(favorites.data ?? []).slice(0, 8).map((e) => (
+                  <CommandItem
+                    key={`fav-${e.id}`}
+                    value={`fav-${e.id}`}
+                    onSelect={() => {
+                      changeOpen(false);
+                      openEntity(e.id);
+                    }}
+                  >
+                    <EntityAvatar
+                      type={types.data?.find((t) => t.key === e.type)}
+                      portrait={e.portrait}
+                      className="size-4"
+                    />
+                    <span className="truncate">{e.name}</span>
+                    <Star className="ml-auto size-3.5 fill-amber-400 text-amber-500" />
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            {needle === "" && (recent.data?.length ?? 0) > 0 && (
+              <CommandGroup heading="Recently edited">
+                {(recent.data ?? []).map((e) => (
+                  <CommandItem
+                    key={`recent-${e.id}`}
+                    value={`recent-${e.id}`}
+                    onSelect={() => {
+                      changeOpen(false);
+                      openEntity(e.id);
+                    }}
+                  >
+                    <EntityAvatar
+                      type={types.data?.find((t) => t.key === e.type)}
+                      portrait={e.portrait}
+                      className="size-4"
+                    />
+                    <span className="truncate">{e.name}</span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
             )}
             {results.length > 0 && (
               <CommandGroup heading="Entities">
@@ -250,9 +351,23 @@ export function CommandPalette() {
                         openEntity(r.entityId);
                       }}
                     >
-                      <EntityIcon icon={type?.icon ?? ""} style={{ color: lookFor(type).color }} />
+                      <EntityAvatar
+                        type={type}
+                        portrait={portraitOf.get(r.entityId)}
+                        className="size-4"
+                      />
                       <div className="flex min-w-0 flex-col">
-                        <span className="truncate">{r.name}</span>
+                        <span className="truncate">
+                          {r.name}
+                          {(tagsOf.get(r.entityId)?.length ?? 0) > 0 && (
+                            <span className="ml-2 text-xs text-muted-foreground">
+                              {tagsOf
+                                .get(r.entityId)
+                                ?.map((t) => `#${t}`)
+                                .join(" ")}
+                            </span>
+                          )}
+                        </span>
                         {r.snippet && (
                           <span className="truncate text-xs text-muted-foreground">
                             <HighlightedSnippet snippet={r.snippet} />

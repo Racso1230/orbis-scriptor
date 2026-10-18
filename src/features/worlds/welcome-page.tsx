@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { FolderOpen, FolderPlus, Settings, Sparkles, Trash2 } from "lucide-react";
+import { FileUp, FolderOpen, FolderPlus, Settings, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { useAppInfo } from "@/features/app/queries";
+import { useImportStore } from "@/features/importer/import-store";
 import { folderName, pickFolder } from "./pick-folder";
 import {
   useCreateSampleWorld,
@@ -38,22 +39,28 @@ export function WelcomePage() {
   const removeRecent = useRemoveRecentWorld();
 
   // Folder + name for the "New world" dialog; null = dialog closed.
-  const [draft, setDraft] = useState<{ path: string; name: string } | null>(null);
+  const [draft, setDraft] = useState<{ path: string; name: string; thenImport: boolean } | null>(
+    null,
+  );
+  const openImport = useImportStore((s) => s.openDialog);
   const [error, setError] = useState<string | null>(null);
   const busy = createWorld.isPending || openWorld.isPending || createSample.isPending;
 
-  async function handleNew() {
+  async function handleNew(thenImport = false) {
     const path = await pickFolder("Choose an empty folder for the new world");
-    if (path) setDraft({ path, name: folderName(path) });
+    if (path) setDraft({ path, name: folderName(path), thenImport });
   }
 
   async function handleCreate() {
     if (!draft) return;
     setError(null);
     try {
-      await createWorld.mutateAsync(draft);
+      await createWorld.mutateAsync({ path: draft.path, name: draft.name });
+      const thenImport = draft.thenImport;
       setDraft(null);
       await navigate({ to: "/world" });
+      // The import wizard lives in the world layout, so it opens once the world is shown.
+      if (thenImport) openImport();
     } catch (e) {
       setError(messageOf(e));
     }
@@ -92,7 +99,7 @@ export function WelcomePage() {
         </div>
 
         <div className="flex gap-3">
-          <Button onClick={handleNew} disabled={busy}>
+          <Button onClick={() => handleNew()} disabled={busy}>
             <FolderPlus /> New world
           </Button>
           <Button variant="outline" onClick={() => handleOpen()} disabled={busy}>
@@ -100,6 +107,9 @@ export function WelcomePage() {
           </Button>
           <Button variant="outline" onClick={handleSample} disabled={busy}>
             <Sparkles /> Create sample world
+          </Button>
+          <Button variant="outline" onClick={() => handleNew(true)} disabled={busy}>
+            <FileUp /> Import vault…
           </Button>
           <Button
             variant="ghost"
@@ -166,7 +176,9 @@ export function WelcomePage() {
       <Dialog open={draft !== null} onOpenChange={(open) => !open && setDraft(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>New world</DialogTitle>
+            <DialogTitle>
+              {draft?.thenImport ? "New world for the import" : "New world"}
+            </DialogTitle>
             <DialogDescription className="truncate">{draft?.path}</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-2">
@@ -184,7 +196,7 @@ export function WelcomePage() {
               Cancel
             </Button>
             <Button onClick={handleCreate} disabled={busy || !draft?.name.trim()}>
-              Create
+              {draft?.thenImport ? "Create and continue" : "Create"}
             </Button>
           </DialogFooter>
         </DialogContent>

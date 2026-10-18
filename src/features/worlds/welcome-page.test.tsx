@@ -1,6 +1,7 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQuery } from "@/test/render";
+import { useImportStore } from "@/features/importer/import-store";
 import { WelcomePage } from "./welcome-page";
 
 const ok = <T,>(data: T) => ({ status: "ok" as const, data });
@@ -96,5 +97,33 @@ describe("WelcomePage", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^Aerth/ }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("No world.json found");
+  });
+
+  it("creates a new world and then opens the import wizard", async () => {
+    dialogOpen.mockResolvedValue("C:/worlds/Imported");
+    commands.createWorld.mockResolvedValue(ok({ name: "Imported", path: "C:/worlds/Imported" }));
+    useImportStore.setState({ dialogOpen: false });
+    renderWithQuery(<WelcomePage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Import vault…/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Create and continue" }));
+
+    await waitFor(() =>
+      expect(commands.createWorld).toHaveBeenCalledWith("C:/worlds/Imported", "Imported"),
+    );
+    await waitFor(() => expect(useImportStore.getState().dialogOpen).toBe(true));
+  });
+
+  it("does not open the import wizard for a plain new world", async () => {
+    dialogOpen.mockResolvedValue("C:/worlds/Plain");
+    commands.createWorld.mockResolvedValue(ok({ name: "Plain", path: "C:/worlds/Plain" }));
+    useImportStore.setState({ dialogOpen: false });
+    renderWithQuery(<WelcomePage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "New world" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Create" }));
+
+    await waitFor(() => expect(commands.createWorld).toHaveBeenCalled());
+    expect(useImportStore.getState().dialogOpen).toBe(false);
   });
 });

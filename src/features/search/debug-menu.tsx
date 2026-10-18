@@ -4,9 +4,11 @@ import {
   Database,
   FlaskConical,
   FileDown,
+  FileUp,
   Printer,
   Settings,
   Shapes,
+  Tags,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,6 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useExportStore } from "@/features/export/export-store";
+import { useImportStore } from "@/features/importer/import-store";
 import {
   SEED_COUNT,
   SEED_EVENT_COUNT,
@@ -29,6 +32,7 @@ import {
 export function DebugMenu() {
   const navigate = useNavigate();
   const openExport = useExportStore((s) => s.openDialog);
+  const openImport = useImportStore((s) => s.openDialog);
   const { rebuildIndex, seedEntities, seedEvents, seedRelationships, status, busy } =
     useIndexMaintenance();
 
@@ -59,6 +63,12 @@ export function DebugMenu() {
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => void navigate({ to: "/world/types" })}>
             <Shapes /> Entity types
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => void navigate({ to: "/world/tags" })}>
+            <Tags /> Tags
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={openImport}>
+            <FileUp /> Import Markdown / Obsidian vault…
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={openExport}>
             <FileDown /> Export to Markdown…
