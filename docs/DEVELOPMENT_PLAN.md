@@ -280,12 +280,12 @@ CREATE INDEX idx_events_start ON events(start_day);
 - [x] Multiple layers: add, rename, reorder, hide, lock
 - [x] Freehand and path tools (rivers, roads, borders) with smoothing
 - [x] Area/polygon tool (kingdoms, regions) with fill styles; areas can link to entities
-- [ ] Text labels, including labels curved along paths
-- [ ] Icon/stamp library (cities, castles, mountains, forests)
+- [x] Text labels, including labels curved along paths
+- [x] Icon/stamp library (cities, castles, mountains, forests)
 - [x] Undo/redo for all map operations
-- [ ] Export map as PNG
+- [x] Export map as PNG
 
-**Backend status:** the Phase 10 Rust backend is done (migration 009, blank maps, layer commands and locking, path/area/label/stamp geometry, client ids and atomic `apply_map_ops` for undo/redo, PNG `save_export`, sample-map shapes, `dev_seed_map_shapes`). Frontend (done so far): blank-map creation and backgrounds, layers panel, rendering of every object kind, Path/Freehand/Area tools, properties panel and undo/redo. Labels, stamps and PNG export stay open (Part 3).
+**Backend status:** the Phase 10 Rust backend is done (migration 009, blank maps, layer commands and locking, path/area/label/stamp geometry, client ids and atomic `apply_map_ops` for undo/redo, PNG `save_export`, sample-map shapes, `dev_seed_map_shapes`). Frontend (done so far): blank-map creation and backgrounds, layers panel, rendering of every object kind, Path/Freehand/Area tools, properties panel and undo/redo. Labels (straight and curved along paths), a 19-stamp library with a Stamp tool, and PNG export are done; the Playwright flow covers freehand, dragging, vertex handles, labels, stamps, undo and export.
 
 **Tests:** Rust services for blank maps, layers (order, visibility, locking), every geometry variant (round trip and validation), label detach on path delete, client-provided ids, atomic op batches and PNG export; Vitest for the undo/redo stack, path smoothing and label placement along a path; Playwright flow for drawing, undo/redo and export.
 
