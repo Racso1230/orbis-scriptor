@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { CalendarDays, Database, FlaskConical, Plus, RefreshCw, Settings, X } from "lucide-react";
+import {
+  CalendarDays,
+  Database,
+  FlaskConical,
+  Network,
+  Plus,
+  RefreshCw,
+  Settings,
+  X,
+} from "lucide-react";
 import {
   Command,
   CommandDialog,
@@ -14,11 +23,17 @@ import { EntityIcon } from "@/features/entities/entity-icon";
 import { useCreateEntity, useEntityTypes } from "@/features/entities/queries";
 import { useOpenEntity } from "@/features/entities/use-open-entity";
 import { runUpdateCheck } from "@/features/updates/check-for-updates";
+import { useOpenGraph } from "@/features/relationships/use-open-graph";
 import { useOpenTimeline } from "@/features/timeline/use-open-timeline";
 import { useCloseWorld } from "@/features/worlds/queries";
 import { HighlightedSnippet } from "./highlighted-snippet";
 import { useSearch } from "./queries";
-import { SEED_COUNT, SEED_EVENT_COUNT, useIndexMaintenance } from "./use-index-maintenance";
+import {
+  SEED_COUNT,
+  SEED_EVENT_COUNT,
+  SEED_RELATIONSHIP_COUNT,
+  useIndexMaintenance,
+} from "./use-index-maintenance";
 
 /**
  * Ctrl+K / Cmd+K palette: server-side search results plus quick actions.
@@ -30,6 +45,7 @@ export function CommandPalette() {
   const navigate = useNavigate();
   const openEntity = useOpenEntity();
   const openTimeline = useOpenTimeline();
+  const openGraph = useOpenGraph();
   const types = useEntityTypes();
   const createEntity = useCreateEntity();
   const closeWorld = useCloseWorld();
@@ -80,6 +96,15 @@ export function CommandPalette() {
       },
     },
     {
+      id: "open-graph",
+      label: "Open graph",
+      icon: <Network />,
+      run: () => {
+        changeOpen(false);
+        openGraph();
+      },
+    },
+    {
       id: "settings",
       label: "Settings",
       icon: <Settings />,
@@ -126,6 +151,12 @@ export function CommandPalette() {
             label: `Seed ${SEED_EVENT_COUNT} test events (dev)`,
             icon: <FlaskConical />,
             run: () => void maintenance.seedEvents(),
+          },
+          {
+            id: "seed-relationships",
+            label: `Seed ${SEED_RELATIONSHIP_COUNT} test relationships (dev)`,
+            icon: <FlaskConical />,
+            run: () => void maintenance.seedRelationships(),
           },
         ]
       : []),

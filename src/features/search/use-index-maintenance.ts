@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { useSeedRelationships } from "@/features/relationships/queries";
 import { useSeedEvents } from "@/features/timeline/queries";
 import { useRebuildSearchIndex, useSeedEntities } from "./queries";
 
 export const SEED_COUNT = 1000;
 export const SEED_EVENT_COUNT = 200;
+export const SEED_RELATIONSHIP_COUNT = 100;
 
 export type MaintenanceStatus = { kind: "success" | "error"; message: string } | null;
 
@@ -16,6 +18,7 @@ export function useIndexMaintenance() {
   const rebuild = useRebuildSearchIndex();
   const seed = useSeedEntities();
   const seedEventsMutation = useSeedEvents();
+  const seedRelationshipsMutation = useSeedRelationships();
   const [status, setStatus] = useState<MaintenanceStatus>(null);
 
   async function rebuildIndex() {
@@ -48,11 +51,26 @@ export function useIndexMaintenance() {
     }
   }
 
+  async function seedRelationships() {
+    setStatus(null);
+    try {
+      const created = await seedRelationshipsMutation.mutateAsync(SEED_RELATIONSHIP_COUNT);
+      setStatus({ kind: "success", message: `Created ${created} test relationships.` });
+    } catch (e) {
+      setStatus({ kind: "error", message: `Seeding failed: ${errorText(e)}` });
+    }
+  }
+
   return {
     rebuildIndex,
     seedEntities,
     seedEvents,
+    seedRelationships,
     status,
-    busy: rebuild.isPending || seed.isPending || seedEventsMutation.isPending,
+    busy:
+      rebuild.isPending ||
+      seed.isPending ||
+      seedEventsMutation.isPending ||
+      seedRelationshipsMutation.isPending,
   };
 }

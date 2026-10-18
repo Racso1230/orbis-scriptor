@@ -9,12 +9,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { SEED_COUNT, SEED_EVENT_COUNT, useIndexMaintenance } from "./use-index-maintenance";
+import {
+  SEED_COUNT,
+  SEED_EVENT_COUNT,
+  SEED_RELATIONSHIP_COUNT,
+  useIndexMaintenance,
+} from "./use-index-maintenance";
 
 /** Gear menu in the header with recovery and dev tools. */
 export function DebugMenu() {
   const navigate = useNavigate();
-  const { rebuildIndex, seedEntities, seedEvents, status, busy } = useIndexMaintenance();
+  const { rebuildIndex, seedEntities, seedEvents, seedRelationships, status, busy } =
+    useIndexMaintenance();
 
   return (
     <div className="flex items-center gap-1">
@@ -51,6 +57,9 @@ export function DebugMenu() {
               </DropdownMenuItem>
               <DropdownMenuItem disabled={busy} onSelect={() => void seedEvents()}>
                 <FlaskConical /> Seed {SEED_EVENT_COUNT} test events (dev)
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={busy} onSelect={() => void seedRelationships()}>
+                <FlaskConical /> Seed {SEED_RELATIONSHIP_COUNT} test relationships (dev)
               </DropdownMenuItem>
             </>
           )}
