@@ -23,7 +23,15 @@ test.afterAll(async () => {
 
 test("sample map renders labels and stamps, and exports a PNG", async () => {
   await page.getByRole("button", { name: "Create sample world" }).click();
-  await page.getByRole("button", { name: "Map of the Shattered Coast" }).first().click();
+  // The sidebar list is virtualised and now starts with Favourites and Recently
+  // edited, so the map row may be out of view: open it from the palette.
+  await expect(page.getByRole("button", { name: "Timeline" })).toBeVisible();
+  await page.keyboard.press("Control+k");
+  await page.getByPlaceholder(/Search entities/).fill("Map of the Shattered Coast");
+  await page
+    .getByRole("option", { name: /Map of the Shattered Coast/ })
+    .first()
+    .click();
   await expect(page.getByRole("button", { name: /^Path/ })).toBeVisible();
   // The image has loaded once the "Loading map image" notice is gone.
   await expect(page.getByText("Loading map image")).toHaveCount(0);
