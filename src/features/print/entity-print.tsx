@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useDisplayCalendar } from "@/features/calendars/queries";
 import { useEntities, useEntity, useEntityTypes } from "@/features/entities/queries";
+import { useEntityImages } from "@/features/gallery/queries";
 import { useDocument } from "@/features/lore/queries";
 import { getBackgroundCanvas } from "@/features/maps/map-background";
 import { useMap } from "@/features/maps/queries";
@@ -9,6 +10,7 @@ import { useRelationships } from "@/features/relationships/queries";
 import { formatDate } from "@/features/timeline/calendar";
 import { useEvent, useEventsForEntity } from "@/features/timeline/queries";
 import type { CalendarDefinition, MapData } from "@/lib/bindings";
+import { fileSrc } from "@/lib/file-src";
 import { formatFieldValue } from "./format-field";
 import { isLoreEmpty, renderLore } from "./lore-render";
 
@@ -29,6 +31,7 @@ export function EntityPrintSection({ entityId, onReady }: Props) {
   const isEvent = entity.data?.type === "event";
   const isMap = entity.data?.type === "map";
   const events = useEventsForEntity(entityId);
+  const gallery = useEntityImages(entityId);
   const [mapReady, setMapReady] = useState(false);
 
   const nameOf = useMemo(() => {
@@ -44,6 +47,7 @@ export function EntityPrintSection({ entityId, onReady }: Props) {
     !entities.isPending &&
     !types.isPending &&
     !calendar.isPending &&
+    !gallery.isPending &&
     (isEvent || !events.isPending);
   const ready = settled && (!isMap || mapReady);
   const reported = useRef(false);
@@ -76,9 +80,15 @@ export function EntityPrintSection({ entityId, onReady }: Props) {
 
   return (
     <section className="print-entity" id={`e-${e.id}`} aria-label={e.name}>
-      <header>
-        <h1>{e.name}</h1>
-        <p className="print-type">{type?.label ?? e.type}</p>
+      <header className={e.portrait ? "print-header-portrait" : undefined}>
+        {e.portrait && <img className="print-portrait" src={fileSrc(e.portrait.path)} alt="" />}
+        <div>
+          <h1>{e.name}</h1>
+          <p className="print-type">{type?.label ?? e.type}</p>
+          {e.tags.length > 0 && (
+            <p className="print-tags print-muted">{e.tags.map((t) => `#${t}`).join("  ")}</p>
+          )}
+        </div>
       </header>
       {e.summary.trim() !== "" && <p className="print-summary">{e.summary}</p>}
 
@@ -98,6 +108,20 @@ export function EntityPrintSection({ entityId, onReady }: Props) {
 
       {doc.data && !isLoreEmpty(doc.data.content) && (
         <div className="print-lore prose max-w-none">{renderLore(doc.data.content, nameOf)}</div>
+      )}
+
+      {gallery.data && gallery.data.length > 0 && (
+        <div>
+          <h2>Gallery</h2>
+          <ul className="print-gallery">
+            {gallery.data.map((img) => (
+              <li key={img.id}>
+                <img src={fileSrc(img.thumbPath ?? img.path)} alt={img.caption || img.fileName} />
+                {img.caption && <span className="print-muted">{img.caption}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {relationships.data && relationships.data.length > 0 && (

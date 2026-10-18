@@ -302,6 +302,42 @@
 .print-entity {
   margin-top: 3rem;
 }
+.print-header-portrait {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.print-pages .print-portrait {
+  width: 3.5cm;
+  height: 3.5cm;
+  object-fit: cover;
+  border-radius: 0.3cm;
+  margin: 0;
+}
+.print-tags {
+  margin: 0.2rem 0 0;
+  font-size: 0.9em;
+}
+.print-pages ul.print-gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  list-style: none;
+  padding: 0;
+  margin: 0.4rem 0;
+}
+.print-gallery li {
+  display: flex;
+  flex-direction: column;
+  width: 4.2cm;
+  font-size: 0.8em;
+}
+.print-pages .print-gallery img {
+  width: 4.2cm;
+  height: 4.2cm;
+  object-fit: cover;
+  margin: 0 0 0.15rem;
+}
 .print-title {
   padding: 6rem 0 2rem;
   text-align: center;

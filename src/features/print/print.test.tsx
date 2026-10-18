@@ -16,6 +16,8 @@ const q = vi.hoisted(() => ({
     type: "custom-deity",
     name: "Aelith",
     summary: "Lady of the tides",
+    tags: ["divine", "places/coast"],
+    portrait: { assetId: "p", path: "C:/w/p.png", thumbPath: null },
     properties: { domain: "Sea", founded: 35, worshippers: ["f1", "gone"], stale: "x" },
   },
 }));
@@ -50,6 +52,20 @@ vi.mock("@/features/entities/queries", () => ({
         ],
       },
       { key: "faction", label: "Faction", plural: "Factions", icon: "flag", color: "#dc2626" },
+    ],
+  }),
+}));
+vi.mock("@/features/gallery/queries", () => ({
+  useEntityImages: () => ({
+    isPending: false,
+    data: [
+      {
+        id: "i1",
+        fileName: "temple.png",
+        caption: "The temple",
+        path: "C:/w/temple.png",
+        thumbPath: "C:/w/temple-thumb.png",
+      },
     ],
   }),
 }));
@@ -121,6 +137,18 @@ describe("EntityPrintSection", () => {
     expect(screen.getByText("Relationships")).toBeInTheDocument();
     expect(screen.getByText("Korrath")).toBeInTheDocument();
     expect(screen.getByText("The Great Flood")).toBeInTheDocument();
+
+    // Tags, portrait and gallery thumbnails.
+    expect(screen.getByText("#divine #places/coast")).toBeInTheDocument();
+    expect(document.querySelector("img.print-portrait")).toHaveAttribute(
+      "src",
+      "asset://C:/w/p.png",
+    );
+    expect(screen.getByRole("heading", { level: 2, name: "Gallery" })).toBeInTheDocument();
+    expect(screen.getByAltText("The temple")).toHaveAttribute(
+      "src",
+      "asset://C:/w/temple-thumb.png",
+    );
     expect(onReady).toHaveBeenCalledTimes(1);
   });
 });

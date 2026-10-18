@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { Printer, Trash2 } from "lucide-react";
+import { Printer, Star, Trash2 } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,7 +20,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { BacklinksPanel } from "@/features/lore/backlinks-panel";
 import { LoreEditor } from "@/features/lore/lore-editor";
 import { AppearsOnMaps } from "@/features/maps/appears-on-maps";
+import { GallerySection } from "@/features/gallery/gallery-section";
+import { Lightbox } from "@/features/gallery/lightbox";
+import { useEntityImages } from "@/features/gallery/queries";
 import { MapView } from "@/features/maps/map-view";
+import { EntityTags } from "@/features/tags/entity-tags";
 import { EntityEvents } from "@/features/timeline/entity-events";
 import { EventDates } from "@/features/timeline/event-dates";
 import { InvolvedPanel } from "@/features/timeline/involved-panel";
@@ -29,10 +33,16 @@ import { useCurrentWorld } from "@/features/worlds/queries";
 import type { Entity, EntityTypeDef } from "@/lib/bindings";
 import { cn } from "@/lib/utils";
 import { useTabsStore } from "@/stores/tabs-store";
-import { EntityIcon } from "./entity-icon";
+import { EntityAvatar } from "./entity-avatar";
 import { FieldInput } from "./field-inputs";
 import { isUnset } from "./field-values";
-import { useDeleteEntity, useEntity, useEntityTypes, useUpdateEntity } from "./queries";
+import {
+  useDeleteEntity,
+  useEntity,
+  useEntityTypes,
+  useSetFavorite,
+  useUpdateEntity,
+} from "./queries";
 import { SaveIndicator } from "./save-indicator";
 import { useSettingsValue } from "@/features/settings/queries";
 import { useAutosave, type SaveStatus } from "./use-autosave";
@@ -72,6 +82,10 @@ function EntityForm({ entity, type }: { entity: Entity; type: EntityTypeDef | un
   const world = useCurrentWorld();
   const updateEntity = useUpdateEntity();
   const deleteEntity = useDeleteEntity();
+  const setFavorite = useSetFavorite();
+  const gallery = useEntityImages(entity.id);
+  const images = gallery.data ?? [];
+  const [lightbox, setLightbox] = useState<number | null>(null);
   const closeTab = useTabsStore((s) => s.closeTab);
 
   const [name, setName] = useState(entity.name);
@@ -137,7 +151,21 @@ function EntityForm({ entity, type }: { entity: Entity; type: EntityTypeDef | un
       )}
     >
       <header className="flex items-center gap-3">
-        <EntityIcon icon={type?.icon ?? ""} className="size-6 shrink-0 text-muted-foreground" />
+        {entity.portrait ? (
+          <button
+            type="button"
+            aria-label="Open portrait"
+            className="shrink-0 rounded-full"
+            onClick={() => {
+              const index = images.findIndex((i) => i.isPortrait);
+              if (index >= 0) setLightbox(index);
+            }}
+          >
+            <EntityAvatar type={type} portrait={entity.portrait} className="size-14" />
+          </button>
+        ) : (
+          <EntityAvatar type={type} portrait={null} className="size-6 opacity-70" />
+        )}
         <Input
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -146,6 +174,17 @@ function EntityForm({ entity, type }: { entity: Entity; type: EntityTypeDef | un
         />
         <Badge variant="secondary">{type?.label ?? entity.type}</Badge>
         <SaveIndicator status={status} error={error} />
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={entity.favorite ? "Remove from favourites" : "Add to favourites"}
+          aria-pressed={entity.favorite}
+          title={entity.favorite ? "Remove from favourites" : "Add to favourites"}
+          disabled={setFavorite.isPending}
+          onClick={() => setFavorite.mutate({ id: entity.id, favorite: !entity.favorite })}
+        >
+          <Star className={cn(entity.favorite && "fill-amber-400 text-amber-500")} />
+        </Button>
         <Button
           variant="ghost"
           size="icon"
@@ -175,6 +214,8 @@ function EntityForm({ entity, type }: { entity: Entity; type: EntityTypeDef | un
           </AlertDialogContent>
         </AlertDialog>
       </header>
+
+      <EntityTags entityId={entity.id} tags={entity.tags} />
 
       {isMap && <MapView mapEntityId={entity.id} />}
 
@@ -232,6 +273,13 @@ function EntityForm({ entity, type }: { entity: Entity; type: EntityTypeDef | un
         <LoreEditor entityId={entity.id} onStatusChange={onLoreStatus} />
       </div>
 
+      <GallerySection
+        entityId={entity.id}
+        images={images}
+        refetch={gallery.refetch}
+        onOpen={setLightbox}
+      />
+
       {isEvent && <InvolvedPanel eventId={entity.id} />}
 
       {!isMap && <RelationshipsPanel entityId={entity.id} entityType={entity.type} />}
@@ -239,6 +287,12 @@ function EntityForm({ entity, type }: { entity: Entity; type: EntityTypeDef | un
       <BacklinksPanel entityId={entity.id} />
       {!isMap && <AppearsOnMaps entityId={entity.id} />}
       {!isMap && !isEvent && <EntityEvents entityId={entity.id} />}
+      <Lightbox
+        images={images}
+        index={lightbox}
+        onIndexChange={setLightbox}
+        onClose={() => setLightbox(null)}
+      />
     </div>
   );
 }

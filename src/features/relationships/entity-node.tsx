@@ -1,8 +1,8 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { ExternalLink } from "lucide-react";
-import { EntityIcon } from "@/features/entities/entity-icon";
-import { useEntityTypes } from "@/features/entities/queries";
+import { EntityAvatar } from "@/features/entities/entity-avatar";
+import { usePortrait, useEntityTypes } from "@/features/entities/queries";
 import { useOpenEntity } from "@/features/entities/use-open-entity";
 import { lookFor } from "@/features/entities/type-look";
 import { cn } from "@/lib/utils";
@@ -21,6 +21,7 @@ function EntityNodeImpl({ id, data }: NodeProps<EntityFlowNode>) {
   const types = useEntityTypes();
   const open = useOpenEntity();
   const type = types.data?.find((t) => t.key === data.entityType);
+  const portrait = usePortrait(id).data ?? null;
   const color = lookFor(type).color;
 
   return (
@@ -37,7 +38,7 @@ function EntityNodeImpl({ id, data }: NodeProps<EntityFlowNode>) {
       <Handle id="l" type="target" position={Position.Left} className={HANDLE_CLASS} />
       <Handle id="b" type="source" position={Position.Bottom} className={HANDLE_CLASS} />
       <Handle id="r" type="source" position={Position.Right} className={HANDLE_CLASS} />
-      <EntityIcon icon={type?.icon ?? ""} className="size-4 shrink-0" style={{ color }} />
+      <EntityAvatar type={type} portrait={portrait} className="size-5" />
       <span className={cn("truncate", data.isFocus && "font-semibold")}>{data.name}</span>
       <button
         type="button"
