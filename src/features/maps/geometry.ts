@@ -86,3 +86,12 @@ export function flattenPoints(points: Point[]): number[] {
 export function distance(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
+
+/** A good point to centre the view on for any object ("jump to" links). */
+export function focusPoint(geometry: MapGeometry): Point | null {
+  const anchor = anchorPoint(geometry);
+  if (anchor) return Number.isFinite(anchor.x) && Number.isFinite(anchor.y) ? anchor : null;
+  const points = shapePoints(geometry);
+  const b = points ? boundsOf(points) : null;
+  return b ? { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 } : null;
+}

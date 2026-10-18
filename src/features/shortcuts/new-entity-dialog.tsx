@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   CommandDialog,
   CommandGroup,
@@ -7,9 +8,11 @@ import {
   Command,
   CommandEmpty,
 } from "@/components/ui/command";
+import { BlankMapDialog } from "@/features/maps/blank-map-dialog";
 import { EntityIcon } from "@/features/entities/entity-icon";
 import { useEntityTypes } from "@/features/entities/queries";
 import { useCreateAndOpen } from "@/features/entities/use-create-and-open";
+import { useOpenEntity } from "@/features/entities/use-open-entity";
 
 /**
  * Ctrl+N: pick a type (type to filter, arrows + Enter) and a fresh entity of
@@ -24,35 +27,54 @@ export function NewEntityDialog({
 }) {
   const types = useEntityTypes();
   const { createAndOpen } = useCreateAndOpen();
+  const openEntity = useOpenEntity();
+  const [blankOpen, setBlankOpen] = useState(false);
 
   return (
-    <CommandDialog
-      open={open}
-      onOpenChange={onOpenChange}
-      title="New entity"
-      description="Choose what to create"
-    >
-      <Command>
-        <CommandInput placeholder="New… (character, location, map)" />
-        <CommandList>
-          <CommandEmpty>No matching type.</CommandEmpty>
-          <CommandGroup heading="Create new">
-            {(types.data ?? []).map((t) => (
+    <>
+      <CommandDialog
+        open={open}
+        onOpenChange={onOpenChange}
+        title="New entity"
+        description="Choose what to create"
+      >
+        <Command>
+          <CommandInput placeholder="New… (character, location, map)" />
+          <CommandList>
+            <CommandEmpty>No matching type.</CommandEmpty>
+            <CommandGroup heading="Create new">
+              {(types.data ?? []).map((t) => (
+                <CommandItem
+                  key={t.key}
+                  value={t.label}
+                  onSelect={() => {
+                    onOpenChange(false);
+                    void createAndOpen(t.key, t.label);
+                  }}
+                >
+                  <EntityIcon icon={t.icon} />
+                  {t.label}
+                </CommandItem>
+              ))}
               <CommandItem
-                key={t.key}
-                value={t.label}
+                value="Blank map"
                 onSelect={() => {
                   onOpenChange(false);
-                  void createAndOpen(t.key, t.label);
+                  setBlankOpen(true);
                 }}
               >
-                <EntityIcon icon={t.icon} />
-                {t.label}
+                <EntityIcon icon={types.data?.find((t) => t.key === "map")?.icon ?? ""} />
+                Blank map�
               </CommandItem>
-            ))}
-          </CommandGroup>
-        </CommandList>
-      </Command>
-    </CommandDialog>
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </CommandDialog>
+      <BlankMapDialog
+        open={blankOpen}
+        onOpenChange={setBlankOpen}
+        target={{ mode: "create", onCreated: openEntity }}
+      />
+    </>
   );
 }

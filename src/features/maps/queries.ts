@@ -1,8 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { entityKeys } from "@/features/entities/queries";
+import { searchKeys } from "@/features/search/queries";
 import { e2eDir } from "@/lib/e2e";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   commands,
+  type MapBackground,
   type MapData,
   type MapObject,
   type MapObjectPatch,
@@ -143,5 +146,50 @@ export function useSeedMapPins(mapEntityId: string) {
         queryClient.invalidateQueries({ queryKey: mapKeys.detail(mapEntityId) }),
         queryClient.invalidateQueries({ queryKey: mapKeys.appearances }),
       ]),
+  });
+}
+
+/** Creates a new blank map entity (name, size and background in one transaction). */
+export function useCreateBlankMap() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    meta: { inlineError: true },
+    mutationFn: (input: {
+      name: string;
+      width: number;
+      height: number;
+      background: MapBackground;
+    }) => unwrap(commands.createBlankMap(input.name, input.width, input.height, input.background)),
+    onSuccess: (data) => {
+      queryClient.setQueryData(mapKeys.detail(data.map.entityId), data);
+      // The sidebar and palette list entities; make them pick up the new map.
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: entityKeys.list }),
+        queryClient.invalidateQueries({ queryKey: searchKeys.all }),
+      ]);
+    },
+  });
+}
+
+/**
+ * Turns an (empty) map entity into a blank map, or changes a blank map's size
+ * and look. Only the parts that are given are sent; image maps are refused by
+ * the backend.
+ */
+export function useConfigureBlankMap(mapEntityId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    meta: { inlineError: true },
+    mutationFn: async (input: {
+      size?: { width: number; height: number };
+      background?: MapBackground;
+    }) => {
+      if (input.size)
+        await unwrap(commands.setMapSize(mapEntityId, input.size.width, input.size.height));
+      if (input.background) {
+        await unwrap(commands.setMapBackgroundStyle(mapEntityId, input.background));
+      }
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: mapKeys.detail(mapEntityId) }),
   });
 }

@@ -36,6 +36,15 @@ describe("matchShortcut", () => {
     expect(matchShortcut(press("w", { ctrlKey: true, altKey: true }))).toBeNull();
   });
 
+  it("matches undo and redo (Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y)", () => {
+    expect(matchShortcut(press("z", { ctrlKey: true }))).toBe("undo");
+    expect(matchShortcut(press("Z", { ctrlKey: true, shiftKey: true }))).toBe("redo");
+    expect(matchShortcut(press("y", { ctrlKey: true }))).toBe("redo");
+    expect(matchShortcut(press("z", { metaKey: true }))).toBe("undo");
+    expect(matchShortcut(press("y", { ctrlKey: true, shiftKey: true }))).toBeNull();
+    expect(matchShortcut(press("z", { ctrlKey: true, altKey: true }))).toBeNull();
+  });
+
   it("ignores unrelated shortcuts", () => {
     expect(matchShortcut(press("b", { ctrlKey: true }))).toBeNull();
     expect(matchShortcut(press("Control", { ctrlKey: true }))).toBeNull();

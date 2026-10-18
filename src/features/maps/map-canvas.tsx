@@ -9,11 +9,17 @@ import {
 } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type Konva from "konva";
-import { Image as KonvaImage, Layer, Stage } from "react-konva";
-import type { MapInfo, MapObject } from "@/lib/bindings";
-import { pinPoint, type Point } from "./geometry";
+import { Group, Image as KonvaImage, Layer, Rect, Stage } from "react-konva";
+import type { MapGeometry, MapInfo, MapLayer, MapObject } from "@/lib/bindings";
+import { focusPoint, type Point } from "./geometry";
+import { bottomFirst, drawOrder, isEditable } from "./layers";
+import { DEFAULT_PLAIN_COLOR, getBackgroundCanvas } from "./map-background";
 import { useMapToolStore, type MapTool } from "./map-tool-store";
-import { MapPin } from "./map-pin";
+import { hoverLabel, type ObjectHandlers } from "./render-types";
+import { OBJECT_RENDERERS } from "./renderers";
+import { applyScreenFixed } from "./screen-fixed";
+import { toolById } from "./tool-registry";
+import { VertexHandles } from "./vertex-handles";
 import {
   MAX_ZOOM,
   centerOn,
@@ -32,14 +38,18 @@ export interface MapCanvasHandle {
 interface Props {
   mapEntityId: string;
   map: MapInfo;
-  /** Objects of the default (first) layer. */
+  layers: MapLayer[];
+  /** Objects of ALL layers; the canvas draws the visible ones. */
   objects: MapObject[];
   tool: MapTool;
   selectedId: string | null;
+  /** The layer new objects go to, or null when there is no editable layer. */
+  activeLayer: MapLayer | null;
   onSelect: (id: string | null) => void;
   onPlacePin: (point: Point) => void;
-  onMovePin: (id: string, point: Point) => void;
-  onOpenPin: (object: MapObject) => void;
+  onMoveObject: (id: string, dx: number, dy: number) => void;
+  onEditGeometry: (id: string, geometry: MapGeometry) => void;
+  onOpenObject: (object: MapObject) => void;
   ref?: React.Ref<MapCanvasHandle>;
 }
 
@@ -53,25 +63,45 @@ type ImageState =
 type LoadResult = { path: string; image: HTMLImageElement | null };
 
 /**
- * The Konva stage. Pan/zoom is applied straight to the Konva stage (and a pin
- * counter-scale to each pin node), with the current transform kept in a ref.
- * React state is only used for things that change rarely (size, image, hover).
+ * The Konva stage.
+ *
+ * Konva structure (four canvases in total, however many map layers exist):
+ *
+ *   Stage            <- pan/zoom lives here (scale + position), kept in a ref
+ *    |- Layer        background (image, texture or plain colour); not listening
+ *    |- Layer        content: one <Group name="map-layer"> per VISIBLE map
+ *    |                 layer, bottom first, each holding that layer's objects
+ *    |                 in createdAt order. Objects are drawn in MAP PIXELS, so
+ *    |                 anything inside scales with zoom automatically.
+ *    |- Layer        selection handles (vertex dots), Select tool only
+ *    `- Layer        active tool's overlay (live preview); not listening
+ *
+ * One Konva Layer per map layer would mean one canvas each; groups give the
+ * same stacking order for the cost of a single canvas.
+ *
+ * Pan/zoom is applied straight to the Konva stage with the current transform
+ * kept in a ref, so a wheel notch never triggers a React render. Nodes named
+ * `screen-fixed` (pins, handles, drawing dots) are counter-scaled by 1/zoom so
+ * they keep their on-screen size. Labels and stamps should NOT be screen-fixed:
+ * they live in map pixels and grow/shrink with the map.
  */
 export function MapCanvas({
   mapEntityId,
   map,
+  layers,
   objects,
   tool,
   selectedId,
+  activeLayer,
   onSelect,
   onPlacePin,
-  onMovePin,
-  onOpenPin,
+  onMoveObject,
+  onEditGeometry,
+  onOpenObject,
   ref,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
-  const pinLayerRef = useRef<Konva.Layer>(null);
   const transformRef = useRef<Transform>({ scale: 1, x: 0, y: 0 });
   const initialisedRef = useRef(false);
 
@@ -82,6 +112,9 @@ export function MapCanvas({
   const saveViewport = useMapToolStore((s) => s.saveViewport);
   const pendingFocus = useMapToolStore((s) => s.pendingFocus);
   const setPendingFocus = useMapToolStore((s) => s.setPendingFocus);
+
+  const toolDef = toolById(tool);
+  const Overlay = toolDef.Overlay;
 
   // ---- Container size ----
   useEffect(() => {
@@ -96,7 +129,7 @@ export function MapCanvas({
     return () => observer.disconnect();
   }, []);
 
-  // ---- Background image ----
+  // ---- Background image (image maps) ----
   const backgroundPath = map.background?.path ?? null;
   useEffect(() => {
     if (!backgroundPath) return;
@@ -113,6 +146,7 @@ export function MapCanvas({
   }, [backgroundPath]);
 
   // Derived, not stored: a result for an older path counts as "still loading".
+  // Blank maps have no image to load: they are ready straight away.
   let imageState: ImageState = { status: "none" };
   if (backgroundPath) {
     if (!loaded || loaded.path !== backgroundPath) imageState = { status: "loading" };
@@ -120,8 +154,15 @@ export function MapCanvas({
     else imageState = { status: "error" };
   }
 
+  // Procedural texture for blank maps (generated once per kind/tint/size, cached).
+  const style = map.backgroundStyle;
+  const texture = useMemo(
+    () => (style && !backgroundPath ? getBackgroundCanvas(style, map.width, map.height) : null),
+    [style, backgroundPath, map.width, map.height],
+  );
+  const ready = imageState.status === "ready" || (style !== null && !backgroundPath);
+
   // ---- Transform helpers (imperative, no React state) ----
-  /** Applies a transform to the stage and counter-scales every pin. */
   const applyTransform = useCallback(
     (t: Transform) => {
       const stage = stageRef.current;
@@ -129,11 +170,7 @@ export function MapCanvas({
       transformRef.current = t;
       stage.scale({ x: t.scale, y: t.scale });
       stage.position({ x: t.x, y: t.y });
-      const inverse = 1 / t.scale;
-      const pins = pinLayerRef.current;
-      if (pins) {
-        for (const node of pins.getChildren()) node.scale({ x: inverse, y: inverse });
-      }
+      applyScreenFixed(stage, t.scale);
       stage.batchDraw();
       saveViewport(mapEntityId, t);
     },
@@ -156,10 +193,9 @@ export function MapCanvas({
     [fit, applyTransform, size],
   );
 
-  // First load: restore the last viewport or fit; then honour a "jump to pin" request.
-  const imageReady = imageState.status === "ready";
+  // First load: restore the last viewport or fit; then honour a "jump to" request.
   useEffect(() => {
-    if (size.width === 0 || size.height === 0 || !imageReady) return;
+    if (size.width === 0 || size.height === 0 || !ready) return;
     if (!initialisedRef.current) {
       initialisedRef.current = true;
       const saved = useMapToolStore.getState().viewports[mapEntityId];
@@ -167,19 +203,19 @@ export function MapCanvas({
     }
     if (pendingFocus && pendingFocus.mapEntityId === mapEntityId) {
       const target = objects.find((o) => o.id === pendingFocus.objectId);
-      const point = target ? pinPoint(target.geometry) : null;
+      const point = target ? focusPoint(target.geometry) : null;
       if (target && point) {
         const scale = Math.min(MAX_ZOOM, Math.max(transformRef.current.scale, 0.5));
         applyTransform(centerOn(point, size, scale));
         onSelect(target.id);
         setPendingFocus(null);
       } else if (objects.length > 0) {
-        setPendingFocus(null); // the pin no longer exists
+        setPendingFocus(null); // the object no longer exists
       }
     }
   }, [
     size,
-    imageReady,
+    ready,
     mapEntityId,
     map.width,
     map.height,
@@ -190,10 +226,10 @@ export function MapCanvas({
     setPendingFocus,
   ]);
 
-  // A different background image (Change background) needs a fresh fit.
+  // A different background (image, or a resize of a blank map) needs a fresh fit.
   useEffect(() => {
     initialisedRef.current = false;
-  }, [backgroundPath]);
+  }, [backgroundPath, map.width, map.height]);
 
   // ---- Stage events ----
   function handleWheel(e: Konva.KonvaEventObject<WheelEvent>) {
@@ -205,12 +241,13 @@ export function MapCanvas({
   }
 
   function handleStageClick(e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) {
-    // Pins stop propagation, so a click that reaches the stage hit empty space.
+    // Objects stop propagation, so a click that reaches the stage hit empty space.
     if (e.target !== stageRef.current) return;
     if (tool === "select") {
       onSelect(null);
       return;
     }
+    if (tool !== "pin") return; // drawing tools handle their own clicks
     const pointer = stageRef.current?.getPointerPosition();
     if (!pointer) return;
     const point = screenToMap(transformRef.current, pointer);
@@ -219,7 +256,7 @@ export function MapCanvas({
   }
 
   function handleDragEnd(e: Konva.KonvaEventObject<DragEvent>) {
-    // Pin drags bubble up here too; only a drag of the stage itself is a pan.
+    // Object drags bubble up here too; only a drag of the stage itself is a pan.
     if (e.target !== stageRef.current) return;
     const stage = e.target;
     const t = { scale: transformRef.current.scale, x: stage.x(), y: stage.y() };
@@ -227,56 +264,81 @@ export function MapCanvas({
     saveViewport(mapEntityId, t);
   }
 
-  // ---- Stable pin callbacks (so memoised pins do not re-render) ----
+  // ---- Stable handlers (so memoised renderers do not re-render) ----
   const objectsRef = useRef(objects);
   useEffect(() => {
     objectsRef.current = objects;
   }, [objects]);
 
-  const handleHover = useCallback((id: string | null) => {
-    const stage = stageRef.current;
-    if (stage) stage.container().style.cursor = id ? "pointer" : "";
-    if (!id) {
-      setHover(null);
-      return;
-    }
-    const object = objectsRef.current.find((o) => o.id === id);
-    const pointer = stage?.getPointerPosition();
-    if (!object || !pointer) return;
-    setHover({ name: object.entityName ?? "Unlinked pin", x: pointer.x, y: pointer.y });
-  }, []);
-
-  const pins = useMemo(
-    () =>
-      objects.flatMap((object) => {
-        const point = pinPoint(object.geometry);
-        return point ? [{ object, point }] : [];
-      }),
-    [objects],
+  const handlers = useMemo<ObjectHandlers>(
+    () => ({
+      onSelect,
+      onHover: (id) => {
+        const stage = stageRef.current;
+        if (stage) stage.container().style.cursor = id ? "pointer" : "";
+        if (!id) {
+          setHover(null);
+          return;
+        }
+        const object = objectsRef.current.find((o) => o.id === id);
+        const pointer = stage?.getPointerPosition();
+        const name = object ? hoverLabel(object) : null;
+        if (!name || !pointer) {
+          setHover(null);
+          return;
+        }
+        setHover({ name, x: pointer.x, y: pointer.y });
+      },
+      onMove: onMoveObject,
+      onOpen: onOpenObject,
+    }),
+    [onSelect, onMoveObject, onOpenObject],
   );
 
-  // Newly mounted pins start at scale 1; give them the counter-scale straight away.
+  // ---- What to draw ----
+  const byId = useMemo(() => new Map(objects.map((o) => [o.id, o])), [objects]);
+  const layerGroups = useMemo(
+    () =>
+      bottomFirst(layers)
+        .filter((l) => l.visible)
+        .map((layer) => ({ layer, objects: drawOrder(objects, layer.id) })),
+    [layers, objects],
+  );
+
+  // Newly mounted pins and handles start at scale 1; give them the counter-scale now.
   useLayoutEffect(() => {
-    const layer = pinLayerRef.current;
-    if (!layer) return;
-    const inverse = 1 / transformRef.current.scale;
-    for (const node of layer.getChildren()) node.scale({ x: inverse, y: inverse });
-    layer.batchDraw();
-  }, [pins]);
+    const stage = stageRef.current;
+    if (!stage) return;
+    applyScreenFixed(stage, transformRef.current.scale);
+    stage.batchDraw();
+  }, [layerGroups, selectedId, tool]);
+
+  const selected = selectedId ? byId.get(selectedId) : undefined;
+  const selectedLayer = selected ? layers.find((l) => l.id === selected.layerId) : undefined;
+  const showHandles =
+    tool === "select" &&
+    selected !== undefined &&
+    (selected.geometry.kind === "path" || selected.geometry.kind === "area") &&
+    isEditable(selectedLayer);
+
+  // Drawing tools take over the pointer: objects must not catch their clicks.
+  const objectsListen = Overlay === undefined;
+
+  const stageDragButtons = toolDef.leftDragPans ? [0, 1] : [1];
 
   return (
     <div
       ref={containerRef}
-      className={`relative size-full overflow-hidden bg-muted/40 ${tool === "pin" ? "cursor-crosshair" : ""}`}
+      className="relative size-full overflow-hidden bg-muted/40"
+      style={{ cursor: toolDef.cursor }}
     >
       {size.width > 0 && size.height > 0 && (
         <Stage
           ref={stageRef}
           width={size.width}
           height={size.height}
-          // Left button and middle button both pan; pins handle their own drag.
           draggable
-          dragButtons={[0, 1]}
+          dragButtons={stageDragButtons}
           onWheel={handleWheel}
           onClick={handleStageClick}
           onTap={handleStageClick}
@@ -291,21 +353,58 @@ export function MapCanvas({
                 perfectDrawEnabled={false}
               />
             )}
-          </Layer>
-          <Layer ref={pinLayerRef}>
-            {pins.map(({ object, point }) => (
-              <MapPin
-                key={object.id}
-                object={object}
-                point={point}
-                selected={object.id === selectedId}
-                draggable={tool === "select"}
-                onSelect={onSelect}
-                onHover={handleHover}
-                onMoveEnd={onMovePin}
-                onOpen={onOpenPin}
+            {!backgroundPath && style && texture && (
+              <KonvaImage
+                image={texture}
+                width={map.width}
+                height={map.height}
+                perfectDrawEnabled={false}
               />
+            )}
+            {!backgroundPath && style && !texture && (
+              <Rect
+                width={map.width}
+                height={map.height}
+                fill={style.kind === "plain" ? (style.color ?? DEFAULT_PLAIN_COLOR) : "#c8b88a"}
+              />
+            )}
+          </Layer>
+          <Layer listening={objectsListen}>
+            {layerGroups.map(({ layer, objects: layerObjects }) => (
+              <Group key={layer.id} name="map-layer">
+                {layerObjects.map((object) => {
+                  const Renderer = OBJECT_RENDERERS[object.geometry.kind];
+                  const pathId =
+                    object.geometry.kind === "label" ? object.geometry.pathId : undefined;
+                  return (
+                    <Renderer
+                      key={object.id}
+                      object={object}
+                      pathObject={pathId ? byId.get(pathId) : undefined}
+                      selected={object.id === selectedId}
+                      selectable={!layer.locked}
+                      draggable={tool === "select" && !layer.locked}
+                      handlers={handlers}
+                    />
+                  );
+                })}
+              </Group>
             ))}
+          </Layer>
+          <Layer listening={tool === "select"}>
+            {showHandles && selected && (
+              <VertexHandles key={selected.id} object={selected} onChange={onEditGeometry} />
+            )}
+          </Layer>
+          <Layer listening={false}>
+            {Overlay && activeLayer && (
+              <Overlay
+                key={tool}
+                mapWidth={map.width}
+                mapHeight={map.height}
+                layerId={activeLayer.id}
+              />
+            )}
           </Layer>
         </Stage>
       )}

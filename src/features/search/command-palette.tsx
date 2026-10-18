@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/command";
 import { EntityIcon } from "@/features/entities/entity-icon";
 import { useCreateEntity, useEntityTypes } from "@/features/entities/queries";
+import { BlankMapDialog } from "@/features/maps/blank-map-dialog";
 import { useOpenEntity } from "@/features/entities/use-open-entity";
 import { runUpdateCheck } from "@/features/updates/check-for-updates";
 import { useOpenGraph } from "@/features/relationships/use-open-graph";
@@ -42,6 +43,7 @@ import {
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [blankOpen, setBlankOpen] = useState(false);
   const navigate = useNavigate();
   const openEntity = useOpenEntity();
   const openTimeline = useOpenTimeline();
@@ -86,6 +88,15 @@ export function CommandPalette() {
           .then((entity) => openEntity(entity.id));
       },
     })),
+    {
+      id: "new-blank-map",
+      label: "New blank map",
+      icon: <Plus />,
+      run: () => {
+        changeOpen(false);
+        setBlankOpen(true);
+      },
+    },
     {
       id: "open-timeline",
       label: "Open timeline",
@@ -164,75 +175,82 @@ export function CommandPalette() {
   const visibleActions = actions.filter((a) => a.label.toLowerCase().includes(needle));
 
   return (
-    <CommandDialog
-      open={open}
-      onOpenChange={changeOpen}
-      title="Search"
-      description="Search entities or run a command"
-      className="sm:max-w-xl"
-    >
-      {/* shouldFilter=false: results are already filtered and ranked by the backend. */}
-      <Command shouldFilter={false}>
-        <CommandInput
-          value={query}
-          onValueChange={setQuery}
-          placeholder="Search entities, or type a command…"
-        />
-        <CommandList>
-          {results.length === 0 && visibleActions.length === 0 && (
-            <CommandEmpty>No results.</CommandEmpty>
-          )}
-          {results.length > 0 && (
-            <CommandGroup heading="Entities">
-              {results.map((r) => {
-                const type = types.data?.find((t) => t.key === r.entityType);
-                return (
-                  <CommandItem
-                    key={r.entityId}
-                    value={`entity-${r.entityId}`}
-                    onSelect={() => {
-                      changeOpen(false);
-                      openEntity(r.entityId);
-                    }}
-                  >
-                    <EntityIcon icon={type?.icon ?? ""} />
-                    <div className="flex min-w-0 flex-col">
-                      <span className="truncate">{r.name}</span>
-                      {r.snippet && (
-                        <span className="truncate text-xs text-muted-foreground">
-                          <HighlightedSnippet snippet={r.snippet} />
-                        </span>
-                      )}
-                    </div>
+    <>
+      <CommandDialog
+        open={open}
+        onOpenChange={changeOpen}
+        title="Search"
+        description="Search entities or run a command"
+        className="sm:max-w-xl"
+      >
+        {/* shouldFilter=false: results are already filtered and ranked by the backend. */}
+        <Command shouldFilter={false}>
+          <CommandInput
+            value={query}
+            onValueChange={setQuery}
+            placeholder="Search entities, or type a command…"
+          />
+          <CommandList>
+            {results.length === 0 && visibleActions.length === 0 && (
+              <CommandEmpty>No results.</CommandEmpty>
+            )}
+            {results.length > 0 && (
+              <CommandGroup heading="Entities">
+                {results.map((r) => {
+                  const type = types.data?.find((t) => t.key === r.entityType);
+                  return (
+                    <CommandItem
+                      key={r.entityId}
+                      value={`entity-${r.entityId}`}
+                      onSelect={() => {
+                        changeOpen(false);
+                        openEntity(r.entityId);
+                      }}
+                    >
+                      <EntityIcon icon={type?.icon ?? ""} />
+                      <div className="flex min-w-0 flex-col">
+                        <span className="truncate">{r.name}</span>
+                        {r.snippet && (
+                          <span className="truncate text-xs text-muted-foreground">
+                            <HighlightedSnippet snippet={r.snippet} />
+                          </span>
+                        )}
+                      </div>
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            )}
+            {visibleActions.length > 0 && (
+              <CommandGroup heading="Actions">
+                {visibleActions.map((a) => (
+                  <CommandItem key={a.id} value={`action-${a.id}`} onSelect={a.run}>
+                    {a.icon}
+                    {a.label}
                   </CommandItem>
-                );
-              })}
-            </CommandGroup>
+                ))}
+              </CommandGroup>
+            )}
+          </CommandList>
+          {maintenance.status && (
+            <p
+              role="status"
+              className={
+                maintenance.status.kind === "error"
+                  ? "border-t px-3 py-2 text-xs text-destructive"
+                  : "border-t px-3 py-2 text-xs text-muted-foreground"
+              }
+            >
+              {maintenance.status.message}
+            </p>
           )}
-          {visibleActions.length > 0 && (
-            <CommandGroup heading="Actions">
-              {visibleActions.map((a) => (
-                <CommandItem key={a.id} value={`action-${a.id}`} onSelect={a.run}>
-                  {a.icon}
-                  {a.label}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          )}
-        </CommandList>
-        {maintenance.status && (
-          <p
-            role="status"
-            className={
-              maintenance.status.kind === "error"
-                ? "border-t px-3 py-2 text-xs text-destructive"
-                : "border-t px-3 py-2 text-xs text-muted-foreground"
-            }
-          >
-            {maintenance.status.message}
-          </p>
-        )}
-      </Command>
-    </CommandDialog>
+        </Command>
+      </CommandDialog>
+      <BlankMapDialog
+        open={blankOpen}
+        onOpenChange={setBlankOpen}
+        target={{ mode: "create", onCreated: openEntity }}
+      />
+    </>
   );
 }

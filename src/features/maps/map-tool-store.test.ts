@@ -8,6 +8,8 @@ describe("map tool store", () => {
       selectedObjectId: null,
       pendingFocus: null,
       viewports: {},
+      activeLayerIds: {},
+      pathPreset: "river",
     }),
   );
 
@@ -32,5 +34,19 @@ describe("map tool store", () => {
     s.saveViewport("a", { scale: 2, x: 1, y: 2 });
     s.saveViewport("b", { scale: 3, x: 0, y: 0 });
     expect(useMapToolStore.getState().viewports["a"]).toEqual({ scale: 2, x: 1, y: 2 });
+  });
+
+  it("remembers the active layer per map", () => {
+    const s = useMapToolStore.getState();
+    s.setActiveLayer("a", "layer-1");
+    s.setActiveLayer("b", "layer-9");
+    expect(useMapToolStore.getState().activeLayerIds).toEqual({ a: "layer-1", b: "layer-9" });
+  });
+
+  it("switches to a drawing tool and keeps the path preset", () => {
+    const s = useMapToolStore.getState();
+    s.setPathPreset("road");
+    s.setTool("path");
+    expect(useMapToolStore.getState()).toMatchObject({ tool: "path", pathPreset: "road" });
   });
 });

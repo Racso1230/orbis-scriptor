@@ -6,6 +6,8 @@ import { useCloseTab } from "@/features/entities/use-close-tab";
 import { useWorldTabs } from "@/stores/tabs-store";
 import { useCurrentWorld } from "@/features/worlds/queries";
 import { toastError } from "@/lib/notify";
+import { triggerActiveMapHistory } from "@/features/maps/map-history";
+import { isTypingTarget } from "@/features/maps/stage-pointer";
 import { matchShortcut } from "./matcher";
 
 /** True while a modal dialog is open; N/W should not act behind it. */
@@ -43,6 +45,13 @@ export function useGlobalShortcuts({ onNewEntity }: { onNewEntity: () => void })
       if (!action || action === "palette") return;
       const { activeId, tabs, closeTab, onNewEntity } = latest.current;
 
+      if (action === "undo" || action === "redo") {
+        // Only a mounted map view handles these, and never while typing (the
+        // text editor and inputs have their own undo) or behind a dialog.
+        if (isTypingTarget(e.target) || modalOpen()) return;
+        if (triggerActiveMapHistory(action)) e.preventDefault();
+        return;
+      }
       if (action === "save") {
         e.preventDefault(); // stop the browser's "Save page" dialog
         void save();

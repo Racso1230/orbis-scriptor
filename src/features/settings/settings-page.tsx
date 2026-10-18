@@ -159,11 +159,15 @@ export function SettingsPage() {
           <h2 className="text-sm font-medium">Keyboard shortcuts</h2>
           <dl className="flex flex-col divide-y rounded-md border text-sm">
             {SHORTCUTS.map((s) => (
-              <div key={s.action} className="flex items-center justify-between px-3 py-2">
+              <div
+                key={`${s.action}-${s.key}`}
+                className="flex items-center justify-between px-3 py-2"
+              >
                 <dt>{s.description}</dt>
                 <dd>
                   <kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
-                    {mod}+{s.key}
+                    {mod}+{s.shift ? "Shift+" : ""}
+                    {s.key}
                   </kbd>
                 </dd>
               </div>
