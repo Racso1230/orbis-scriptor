@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type Document } from "@/lib/bindings";
+import { entityKeys } from "@/features/entities/queries";
 import { searchKeys } from "@/features/search/queries";
 import { unwrap } from "@/lib/unwrap";
 
@@ -50,6 +51,8 @@ export function useSaveDocument() {
         queryClient.invalidateQueries({ queryKey: backlinkKeys.all }),
         // Lore text is indexed, so cached search results may be stale too.
         queryClient.invalidateQueries({ queryKey: searchKeys.all }),
+        // A lore save bumps the entity's "last edited" time.
+        queryClient.invalidateQueries({ queryKey: entityKeys.recent }),
       ]);
     },
   });

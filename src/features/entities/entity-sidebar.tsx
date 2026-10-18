@@ -9,16 +9,27 @@ import {
   Plus,
   Search,
   Shapes,
+  Star,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCurrentWorld } from "@/features/worlds/queries";
 import { cn } from "@/lib/utils";
 import { useTabsStore } from "@/stores/tabs-store";
+import { SidebarTagFilter } from "@/features/tags/sidebar-tag-filter";
+import { EntityAvatar } from "./entity-avatar";
 import { EntityIcon } from "./entity-icon";
 import { lookFor } from "./type-look";
-import { useCreateEntity, useEntities, useEntityTypes } from "./queries";
-import { buildSidebarRows } from "./sidebar-rows";
+import {
+  useCreateEntity,
+  useEntities,
+  useEntityTypes,
+  useFavorites,
+  useRecent,
+  useSetFavorite,
+} from "./queries";
+import { formatRelativeTime } from "./relative-time";
+import { buildSidebarRows, buildTopSections, type SectionId, type TagFilter } from "./sidebar-rows";
 
 const ROW_HEIGHT = 32;
 
@@ -29,6 +40,9 @@ export function EntitySidebar() {
   const world = useCurrentWorld();
   const types = useEntityTypes();
   const entities = useEntities();
+  const favorites = useFavorites();
+  const recent = useRecent();
+  const setFavorite = useSetFavorite();
   const createEntity = useCreateEntity();
   const openTab = useTabsStore((s) => s.openTab);
   const onTimeline = useRouterState({ select: (s) => s.location.pathname.endsWith("/timeline") });
@@ -36,10 +50,26 @@ export function EntitySidebar() {
 
   const [filter, setFilter] = useState("");
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const [collapsedSections, setCollapsedSections] = useState<ReadonlySet<SectionId>>(new Set());
+  const [tagFilter, setTagFilter] = useState<TagFilter>({ tags: [], matchAll: false });
+  const filtering = filter.trim() !== "" || tagFilter.tags.length > 0;
 
   const rows = useMemo(
-    () => buildSidebarRows(types.data ?? [], entities.data ?? [], filter, collapsed),
-    [types.data, entities.data, filter, collapsed],
+    () => [
+      ...buildTopSections(favorites.data ?? [], recent.data ?? [], collapsedSections, filtering),
+      ...buildSidebarRows(types.data ?? [], entities.data ?? [], filter, collapsed, tagFilter),
+    ],
+    [
+      favorites.data,
+      recent.data,
+      collapsedSections,
+      filtering,
+      types.data,
+      entities.data,
+      filter,
+      collapsed,
+      tagFilter,
+    ],
   );
 
   // Only the rows in view are rendered, so thousands of entities stay fast.
@@ -57,6 +87,15 @@ export function EntitySidebar() {
       const next = new Set(prev);
       if (next.has(typeKey)) next.delete(typeKey);
       else next.add(typeKey);
+      return next;
+    });
+  }
+
+  function toggleSection(id: SectionId) {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }
@@ -104,6 +143,7 @@ export function EntitySidebar() {
           aria-label="Filter entities"
         />
       </div>
+      <SidebarTagFilter value={tagFilter} onChange={setTagFilter} />
 
       <div ref={parentRef} className="flex-1 overflow-auto px-2 pb-2">
         <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
@@ -151,26 +191,70 @@ export function EntitySidebar() {
               );
             }
 
+            if (row.kind === "section") {
+              const Chevron = row.collapsed ? ChevronRight : ChevronDown;
+              return (
+                <div key={item.key} style={style} className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => toggleSection(row.id)}
+                    className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 text-xs font-medium tracking-wide text-muted-foreground uppercase hover:bg-accent"
+                    aria-expanded={!row.collapsed}
+                  >
+                    <Chevron className="size-3.5 shrink-0" />
+                    {row.id === "favorites" ? (
+                      <Star className="size-3.5 shrink-0" />
+                    ) : (
+                      <CalendarDays className="size-3.5 shrink-0" />
+                    )}
+                    <span className="truncate">{row.label}</span>
+                    <span className="ml-auto font-normal tabular-nums">{row.count}</span>
+                  </button>
+                </div>
+              );
+            }
+
             const type = types.data?.find((t) => t.key === row.entity.type);
             const active = row.entity.id === activeId;
+            const starred = row.entity.favorite;
             return (
-              <button
+              <div
                 key={item.key}
-                type="button"
                 style={style}
-                onClick={() => open(row.entity.id)}
+                data-section={row.section}
                 className={cn(
-                  "flex items-center gap-2 rounded-md px-2 text-sm hover:bg-accent",
+                  "group flex items-center rounded-md text-sm hover:bg-accent",
                   active && "bg-accent font-medium",
                 )}
               >
-                <EntityIcon
-                  icon={type?.icon ?? ""}
-                  className="size-4 shrink-0"
-                  style={{ color: lookFor(type).color }}
-                />
-                <span className="truncate">{row.entity.name}</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => open(row.entity.id)}
+                  title={row.entity.tags.length > 0 ? row.entity.tags.join(", ") : undefined}
+                  className="flex h-full min-w-0 flex-1 items-center gap-2 px-2 text-left"
+                >
+                  <EntityAvatar type={type} portrait={row.entity.portrait} className="size-5" />
+                  <span className="truncate">{row.entity.name}</span>
+                  {row.section === "recent" && (
+                    <span className="ml-auto shrink-0 text-xs font-normal text-muted-foreground">
+                      {formatRelativeTime(row.entity.updatedAt)}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  aria-label={starred ? "Remove from favourites" : "Add to favourites"}
+                  aria-pressed={starred}
+                  title={starred ? "Remove from favourites" : "Add to favourites"}
+                  onClick={() => setFavorite.mutate({ id: row.entity.id, favorite: !starred })}
+                  className={cn(
+                    "mr-1 rounded-sm p-0.5 text-muted-foreground hover:text-foreground focus-visible:opacity-100",
+                    starred ? "text-amber-500" : "opacity-0 group-hover:opacity-100",
+                  )}
+                >
+                  <Star className={cn("size-3.5", starred && "fill-current")} />
+                </button>
+              </div>
             );
           })}
         </div>

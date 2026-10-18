@@ -11,6 +11,7 @@ import { currentWorldQuery } from "@/features/worlds/queries";
 import { GraphPage } from "@/features/relationships/graph-view";
 import { CalendarsPage } from "@/features/calendars/calendars-page";
 import { PrintEntityPage, PrintWorldPage } from "@/features/print/print-pages";
+import { TagsPage } from "@/features/tags/tags-page";
 import { TypesPage } from "@/features/types/types-page";
 import { TimelinePage } from "@/features/timeline/timeline-view";
 import { SettingsPage } from "@/features/settings/settings-page";
@@ -84,6 +85,13 @@ const typesRoute = createRoute({
   component: TypesPage,
 });
 
+// `/world/tags` - all tags with rename, colour and delete.
+const tagsRoute = createRoute({
+  getParentRoute: () => worldRoute,
+  path: "/tags",
+  component: TagsPage,
+});
+
 // `/world/graph` - relationship graph and family tree (focus lives in a store).
 const graphRoute = createRoute({
   getParentRoute: () => worldRoute,
@@ -129,6 +137,7 @@ const routeTree = rootRoute.addChildren([
       timelineRoute,
       calendarsRoute,
       typesRoute,
+      tagsRoute,
       graphRoute,
     ]),
   ]),
