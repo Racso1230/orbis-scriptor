@@ -267,10 +267,10 @@ CREATE INDEX idx_events_start ON events(start_day);
 
 ### Phase 9 — Relationship graph (v0.2)
 
-- [ ] Typed relationships between entities (parent of, member of, ally of, rules…) stored in `links`, with a relationship editor on entity pages
-- [ ] React Flow graph view: focus on one entity and expand N degrees, filter by relationship and entity type, auto-layout (e.g. ELK or dagre)
-- [ ] Family-tree layout mode for characters
-- Backend (done): a built-in relationship catalog (key, forward/inverse label, symmetric flag, category, entity-type constraints) plus free-text `custom` relationships, all stored as `links` rows; commands to list kinds, list/create/update/delete relationships, `get_entity_graph` (BFS by degrees with kind/type filters and a node cap) and `get_family_tree` (nodes with generation numbers). `mention` and `involved_in` links are never touched by relationship code. The sample world has family, faction and place relationships, and `dev_seed_relationships(count)` makes random ones for performance tests. The relationship editor, graph view and family-tree layout (frontend) are still to do.
+- [x] Typed relationships between entities (parent of, member of, ally of, rules…) stored in `links`, with a relationship editor on entity pages
+- [x] React Flow graph view: focus on one entity and expand N degrees, filter by relationship and entity type, auto-layout (e.g. ELK or dagre)
+- [x] Family-tree layout mode for characters
+- Backend (done): a built-in relationship catalog (key, forward/inverse label, symmetric flag, category, entity-type constraints) plus free-text `custom` relationships, all stored as `links` rows; commands to list kinds, list/create/update/delete relationships, `get_entity_graph` (BFS by degrees with kind/type filters and a node cap) and `get_family_tree` (nodes with generation numbers). `mention` and `involved_in` links are never touched by relationship code. The sample world has family, faction and place relationships, and `dev_seed_relationships(count)` makes random ones for performance tests. Frontend (done): a Relationships section on every entity page (grouped list, add with inverse wording, edit, delete), a React Flow graph view (dagre layout, depth, kind/type filters, mentions toggle) and a family-tree layout, reachable from the sidebar, the palette and "Show in graph".
 - **Tests:** catalog validation, symmetric canonical storage, perspective labels, mention/relationship isolation, graph depth/filter/truncation, family-tree generations, cascade on entity delete, sample-world relationships (Rust); layout and filter logic (Vitest).
 - **Acceptance:** in the sample world, give Queen Isolde a parent, a spouse and a faction; open the graph focused on her, expand to 2 degrees, filter to family only, and switch to family-tree layout.
 
