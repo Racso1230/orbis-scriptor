@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
+  CalendarCog,
   CalendarDays,
   Database,
   FlaskConical,
@@ -113,6 +114,15 @@ export function CommandPalette() {
       run: () => {
         changeOpen(false);
         openGraph();
+      },
+    },
+    {
+      id: "calendars",
+      label: "Calendars",
+      icon: <CalendarCog />,
+      run: () => {
+        changeOpen(false);
+        void navigate({ to: "/world/calendars" });
       },
     },
     {

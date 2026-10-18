@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { Database, FlaskConical, Settings } from "lucide-react";
+import { CalendarCog, Database, FlaskConical, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -43,6 +43,9 @@ export function DebugMenu() {
         <DropdownMenuContent align="end">
           <DropdownMenuItem onSelect={() => void navigate({ to: "/settings" })}>
             <Settings /> Settings
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => void navigate({ to: "/world/calendars" })}>
+            <CalendarCog /> Calendars
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuLabel>Maintenance</DropdownMenuLabel>
