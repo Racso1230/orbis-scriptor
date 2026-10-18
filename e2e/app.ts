@@ -1,4 +1,5 @@
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { createServer } from "node:net";
 import {
   copyFileSync,
   existsSync,
@@ -15,7 +16,24 @@ import { chromium, type Browser, type Page } from "@playwright/test";
 const ROOT = path.resolve(import.meta.dirname, "..");
 const EXE = path.join(ROOT, "src-tauri", "target", "debug", "orbis-scriptor.exe");
 const SAMPLE_MAP = path.join(ROOT, "src-tauri", "assets", "shattered-coast-map.png");
-const PORT = Number(process.env.E2E_CDP_PORT ?? 9222);
+/**
+ * A DevTools port for this run. A fixed port (the old 9222) could still be
+ * held by the previous run's WebView2 while it shuts down, and the test would
+ * then attach to that dying window. Asking the OS for a free port avoids it.
+ */
+async function pickPort(): Promise<number> {
+  if (process.env.E2E_CDP_PORT) return Number(process.env.E2E_CDP_PORT);
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.unref();
+    server.on("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      server.close(() => (port ? resolve(port) : reject(new Error("no free port"))));
+    });
+  });
+}
 
 export interface RunningApp {
   page: Page;
@@ -48,7 +66,7 @@ function activePort(webviewData: string): number | undefined {
 }
 
 /** Polls until WebView2's DevTools endpoint answers; returns its port. */
-async function waitForCdp(app: ChildProcess, webviewData: string, output: string[]) {
+async function waitForCdp(app: ChildProcess, webviewData: string, output: string[], PORT: number) {
   const deadline = Date.now() + 90_000;
   while (Date.now() < deadline) {
     if (app.exitCode !== null) {
@@ -136,6 +154,7 @@ export async function startApp(): Promise<RunningApp> {
   const webviewData = path.join(dir, "webview-data");
   mkdirSync(webviewData);
 
+  const PORT = await pickPort();
   const output: string[] = [];
   const child = spawn(EXE, [], {
     // Keep the app's own logs so a failed start can say why.
@@ -161,7 +180,7 @@ export async function startApp(): Promise<RunningApp> {
 
   let browser: Browser | undefined;
   try {
-    const port = await waitForCdp(child, webviewData, output);
+    const port = await waitForCdp(child, webviewData, output, PORT);
     browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
     const context = browser.contexts()[0];
     if (!context) throw new Error("No WebView2 context found");
