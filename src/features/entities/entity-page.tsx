@@ -16,13 +16,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { BacklinksPanel } from "@/features/lore/backlinks-panel";
 import { LoreEditor } from "@/features/lore/lore-editor";
@@ -33,10 +26,12 @@ import { EventDates } from "@/features/timeline/event-dates";
 import { InvolvedPanel } from "@/features/timeline/involved-panel";
 import { RelationshipsPanel } from "@/features/relationships/relationships-panel";
 import { useCurrentWorld } from "@/features/worlds/queries";
-import type { Entity, EntityTypeDef, FieldDef } from "@/lib/bindings";
+import type { Entity, EntityTypeDef } from "@/lib/bindings";
 import { cn } from "@/lib/utils";
 import { useTabsStore } from "@/stores/tabs-store";
 import { EntityIcon } from "./entity-icon";
+import { FieldInput } from "./field-inputs";
+import { isUnset } from "./field-values";
 import { useDeleteEntity, useEntity, useEntityTypes, useUpdateEntity } from "./queries";
 import { SaveIndicator } from "./save-indicator";
 import { useSettingsValue } from "@/features/settings/queries";
@@ -82,6 +77,10 @@ function EntityForm({ entity, type }: { entity: Entity; type: EntityTypeDef | un
   const [summary, setSummary] = useState(entity.summary);
   const [properties, setProperties] = useState<Properties>(entity.properties);
 
+  // Built-in fields first, then the ones the user added to the type.
+  const builtinFields = (type?.fields ?? []).filter((f) => !f.custom);
+  const customFields = (type?.fields ?? []).filter((f) => f.custom);
+
   const isMap = entity.type === "map";
   const isEvent = entity.type === "event";
 
@@ -115,7 +114,7 @@ function EntityForm({ entity, type }: { entity: Entity; type: EntityTypeDef | un
   function setProperty(key: string, value: unknown) {
     setProperties((prev) => {
       const next = { ...prev };
-      if (value === undefined || value === "") delete next[key];
+      if (isUnset(value)) delete next[key];
       else next[key] = value;
       return next;
     });
@@ -183,16 +182,39 @@ function EntityForm({ entity, type }: { entity: Entity; type: EntityTypeDef | un
       </div>
 
       {type && type.fields.length > 0 && (
-        <div className="grid grid-cols-2 gap-4">
-          {type.fields.map((field) => (
-            <FieldInput
-              key={field.key}
-              field={field}
-              value={properties[field.key]}
-              onChange={(value) => setProperty(field.key, value)}
-            />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-2 gap-4">
+            {builtinFields.map((field) => (
+              <FieldInput
+                key={field.key}
+                field={field}
+                value={properties[field.key]}
+                entityId={entity.id}
+                error={fields.error}
+                onChange={(value) => setProperty(field.key, value)}
+              />
+            ))}
+          </div>
+          {customFields.length > 0 && (
+            <div className="flex flex-col gap-3">
+              {builtinFields.length > 0 && (
+                <h2 className="text-sm font-medium text-muted-foreground">Extra fields</h2>
+              )}
+              <div className="grid grid-cols-2 gap-4">
+                {customFields.map((field) => (
+                  <FieldInput
+                    key={field.key}
+                    field={field}
+                    value={properties[field.key]}
+                    entityId={entity.id}
+                    error={fields.error}
+                    onChange={(value) => setProperty(field.key, value)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       <div className="flex flex-col gap-2">
@@ -207,50 +229,6 @@ function EntityForm({ entity, type }: { entity: Entity; type: EntityTypeDef | un
       <BacklinksPanel entityId={entity.id} />
       {!isMap && <AppearsOnMaps entityId={entity.id} />}
       {!isMap && !isEvent && <EntityEvents entityId={entity.id} />}
-    </div>
-  );
-}
-
-function FieldInput({
-  field,
-  value,
-  onChange,
-}: {
-  field: FieldDef;
-  value: unknown;
-  onChange: (value: unknown) => void;
-}) {
-  const inputId = `field-${field.key}`;
-  return (
-    <div className="flex flex-col gap-2">
-      <Label htmlFor={inputId}>{field.label}</Label>
-      {field.kind === "select" ? (
-        <Select value={typeof value === "string" ? value : ""} onValueChange={(v) => onChange(v)}>
-          <SelectTrigger id={inputId} className="w-full">
-            <SelectValue placeholder="—" />
-          </SelectTrigger>
-          <SelectContent>
-            {field.options.map((option) => (
-              <SelectItem key={option} value={option}>
-                {option}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      ) : field.kind === "number" ? (
-        <Input
-          id={inputId}
-          type="number"
-          value={typeof value === "number" ? value : ""}
-          onChange={(e) => onChange(e.target.value === "" ? undefined : Number(e.target.value))}
-        />
-      ) : (
-        <Input
-          id={inputId}
-          value={typeof value === "string" ? value : ""}
-          onChange={(e) => onChange(e.target.value)}
-        />
-      )}
     </div>
   );
 }
