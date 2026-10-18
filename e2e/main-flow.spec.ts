@@ -103,6 +103,26 @@ test("create world, entities, lore mention, search, pin and event", async () => 
   await expect(page.getByRole("textbox", { name: "Name" })).toHaveValue("The Founding");
   await expect(page.getByRole("button", { name: "The Founding" }).first()).toBeVisible();
 
+  // 7. Relationship: Aldric is located in Port Hallow, then show it in the graph.
+  await page.getByRole("button", { name: "Aldric the Wanderer" }).first().click();
+  await expect(page.getByRole("textbox", { name: "Name" })).toHaveValue("Aldric the Wanderer");
+  await page.getByRole("button", { name: "Add relationship" }).click();
+  await page.getByLabel("Relationship", { exact: true }).selectOption({ label: "located in" });
+  await page.getByRole("button", { name: "Choose entity" }).click();
+  await page.getByPlaceholder(/Search entities, or type a name/).fill("Port");
+  await page
+    .getByRole("option", { name: /Port Hallow/ })
+    .first()
+    .click();
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  const relationships = page.getByRole("region", { name: "Relationships" });
+  await expect(
+    relationships.getByRole("button", { name: "Port Hallow", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Show in graph" }).click();
+  await expect(page.locator(".react-flow__node")).toHaveCount(2);
+  await expect(page.locator(".react-flow__node", { hasText: "Port Hallow" })).toBeVisible();
+
   // Tidy up: leave the world and drop it (and any leftovers from earlier,
   // failed runs) from the recent worlds list, which lives outside the temp dir.
   await page.getByRole("button", { name: "Close world" }).click();
