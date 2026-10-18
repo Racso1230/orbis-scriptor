@@ -185,11 +185,21 @@ fn list_item_body(item: &Value, ctx: &Ctx) -> String {
             continue;
         }
         if !out.is_empty() {
-            out.push_str(if is_list(child) { "\n" } else { "\n\n" });
+            // A nested list follows the item's text directly ("tight"), except
+            // an ordered list that does not start at 1: Markdown only lets a
+            // list starting at 1 interrupt a paragraph, so that one needs a
+            // blank line.
+            let tight = is_list(child) && !starts_after_one(child);
+            out.push_str(if tight { "\n" } else { "\n\n" });
         }
         out.push_str(&text);
     }
     out
+}
+
+/// True for an ordered list whose first number is not 1.
+fn starts_after_one(node: &Value) -> bool {
+    kind(node) == "orderedList" && attr(node, "start").and_then(Value::as_u64).unwrap_or(1) != 1
 }
 
 // ---- code, images, tables ------------------------------------------------
@@ -606,7 +616,7 @@ mod tests {
         ]));
         assert_eq!(
             md(d),
-            "- one\n  3. three\n  4. four\n- two\n\n  second paragraph\n\n1. first\n2. second"
+            "- one\n\n  3. three\n  4. four\n- two\n\n  second paragraph\n\n1. first\n2. second"
         );
     }
 

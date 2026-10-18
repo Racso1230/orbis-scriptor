@@ -35,7 +35,11 @@ base64 = "0.22"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+# Markdown import: CommonMark/GFM parser (we need events, not HTML output).
 pulldown-cmark = { version = "0.13.4", default-features = false }
+# YAML front matter. serde_yaml is archived and serde_yml has had unsoundness
+# advisories, so we use yaml-rust2 (maintained, small) and convert its values
+# to serde_json ourselves.
 yaml-rust2 = { version = "0.13.0", default-features = false }
 
 [dev-dependencies]

@@ -18,6 +18,7 @@ pub mod links;
 pub mod maps;
 pub mod markdown;
 pub mod markdown_export;
+pub mod markdown_import;
 pub mod properties;
 pub mod recent_worlds;
 pub mod relationships;
