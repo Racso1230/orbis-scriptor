@@ -25,6 +25,10 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   onPickEntity: (entityId: string) => void;
   onCreateEntity: (type: string, name: string) => void;
+  /** Only offer (and create) entities of these types; empty or missing = any. */
+  allowedTypes?: string[];
+  /** Hide this entity from the matches (e.g. the one being edited). */
+  excludeId?: string;
 }
 
 /**
@@ -38,15 +42,22 @@ export function EntityPickerDialog({
   onCreateEntity,
   title = "Link pin to an entity",
   description = "Choose an existing entity or create a new one for this pin",
+  allowedTypes,
+  excludeId,
 }: Props) {
   const [query, setQuery] = useState("");
   const entities = useEntities();
   const types = useEntityTypes();
 
   // Keep entity matches first; among "create" rows put Location on top (the usual pin target).
-  const items = buildMentionItems(entities.data ?? [], types.data ?? [], query).sort(
-    (a, b) => rank(a) - rank(b),
-  );
+  const restricted = allowedTypes !== undefined && allowedTypes.length > 0;
+  const items = buildMentionItems(
+    (entities.data ?? []).filter(
+      (e) => e.id !== excludeId && (!restricted || allowedTypes.includes(e.type)),
+    ),
+    (types.data ?? []).filter((t) => !restricted || allowedTypes.includes(t.key)),
+    query,
+  ).sort((a, b) => rank(a) - rank(b));
 
   function handleOpenChange(next: boolean) {
     if (!next) setQuery("");

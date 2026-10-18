@@ -31,6 +31,7 @@ import { MapView } from "@/features/maps/map-view";
 import { EntityEvents } from "@/features/timeline/entity-events";
 import { EventDates } from "@/features/timeline/event-dates";
 import { InvolvedPanel } from "@/features/timeline/involved-panel";
+import { RelationshipsPanel } from "@/features/relationships/relationships-panel";
 import { useCurrentWorld } from "@/features/worlds/queries";
 import type { Entity, EntityTypeDef, FieldDef } from "@/lib/bindings";
 import { cn } from "@/lib/utils";
@@ -200,6 +201,8 @@ function EntityForm({ entity, type }: { entity: Entity; type: EntityTypeDef | un
       </div>
 
       {isEvent && <InvolvedPanel eventId={entity.id} />}
+
+      {!isMap && <RelationshipsPanel entityId={entity.id} entityType={entity.type} />}
 
       <BacklinksPanel entityId={entity.id} />
       {!isMap && <AppearsOnMaps entityId={entity.id} />}
