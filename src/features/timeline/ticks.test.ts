@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CalendarDefinition } from "@/lib/bindings";
-import { fromDate } from "./calendar";
+import fixtures from "./calendar-fixtures.json";
+import { daysInYear, fromDate, startOfMonth, startOfYear, yearIndexOfDay } from "./calendar";
 import { generateTicks, tickUnits } from "./ticks";
 
 const def: CalendarDefinition = {
@@ -84,5 +85,65 @@ describe("tickUnits", () => {
     expect(units[0]).toMatchObject({ kind: "day", step: 1 });
     expect(units.map((u) => u.span)).toEqual([...units.map((u) => u.span)].sort((a, b) => a - b));
     expect(units.some((u) => u.kind === "year" && u.step === 1000)).toBe(true);
+  });
+});
+
+// The gregorian fixture calendar: epoch 1000, 12 months, February gains a day in
+// years divisible by 4 (except 100, but 400 again), so years vary between 365 and 366 days.
+const gregorian = fixtures.calendars.find((c) => c.name === "gregorian")
+  ?.definition as CalendarDefinition;
+
+const gregMajors = (from: number, to: number, dpp: number) =>
+  generateTicks(gregorian, from, to, dpp).filter((t) => t.major && t.day >= from && t.day <= to);
+
+describe("generateTicks with leap years", () => {
+  it("places year ticks on real year starts, 366 days apart across a leap year", () => {
+    const from = fromDate(gregorian, 0, 1, 1, 1);
+    const ticks = gregMajors(from, from + 365 * 9, 3);
+    expect(ticks.map((t) => t.label).slice(0, 5)).toEqual(["1 CE", "2 CE", "3 CE", "4 CE", "5 CE"]);
+    const gaps = ticks.slice(1).map((t, i) => t.day - (ticks[i]?.day ?? 0));
+    // Year 4 is a leap year, year 8 too; every tick is exactly the start of its year.
+    expect(gaps.slice(0, 4)).toEqual([365, 365, 365, 366]);
+    for (const t of ticks) {
+      expect(t.day).toBe(startOfYear(gregorian, yearIndexOfDay(gregorian, t.day)));
+    }
+  });
+
+  it("keeps decade ticks aligned to round years despite uneven year lengths", () => {
+    const from = fromDate(gregorian, 0, 1, 1, 1);
+    const ticks = gregMajors(from, from + 365 * 130, 36);
+    const labels = ticks.map((t) => t.label);
+    expect(labels).toContain("100 CE");
+    expect(ticks.every((t) => Number.parseInt(t.label, 10) % 10 === 0)).toBe(true);
+    const hundred = ticks.find((t) => t.label === "100 CE");
+    // Year 100 is not a leap year, 40 years of 4 give 10 leap days per 40 years.
+    expect(hundred?.day).toBe(fromDate(gregorian, 0, 100, 1, 1));
+    expect(hundred?.day).toBe(from + 99 * 365 + 24);
+  });
+
+  it("lengthens the February month tick gap in a leap year", () => {
+    // Zoomed to month scale. Year 4 is leap, year 3 is not.
+    const leapStart = fromDate(gregorian, 0, 4, 1, 1);
+    const normalStart = fromDate(gregorian, 0, 3, 1, 1);
+    const leap = gregMajors(leapStart, leapStart + 120, 0.2);
+    const normal = gregMajors(normalStart, normalStart + 120, 0.2);
+    expect(leap.slice(0, 3).map((t) => t.label)).toEqual(["M1, 4 CE", "M2", "M3"]);
+    expect((leap[2]?.day ?? 0) - (leap[1]?.day ?? 0)).toBe(29);
+    expect((normal[2]?.day ?? 0) - (normal[1]?.day ?? 0)).toBe(28);
+    expect(leap[2]?.day).toBe(startOfMonth(gregorian, 3, 2));
+  });
+
+  it("shows the leap day at day scale, then the next month", () => {
+    const start = fromDate(gregorian, 0, 4, 2, 27);
+    const ticks = gregMajors(start, start + 3, 0.01);
+    expect(ticks.map((t) => t.label)).toEqual(["27", "28", "29", "M3"]);
+    const plain = fromDate(gregorian, 0, 3, 2, 27);
+    expect(gregMajors(plain, plain + 2, 0.01).map((t) => t.label)).toEqual(["27", "28", "M3"]);
+  });
+
+  it("uses the average year length (leap days included) for year units", () => {
+    const year = tickUnits(gregorian).find((u) => u.kind === "year" && u.step === 1);
+    expect(year?.span).toBeCloseTo(365.2425, 3);
+    expect(daysInYear(gregorian, 3)).toBe(366);
   });
 });
