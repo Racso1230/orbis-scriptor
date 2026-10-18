@@ -140,6 +140,33 @@ test("create world, entities, lore mention, search, pin and event", async () => 
   await expect(page.getByRole("textbox", { name: "Name" })).toHaveValue("The Founding");
   await expect(page.getByRole("button", { name: "The Founding" }).first()).toBeVisible();
 
+  // 6b. Calendars: build a 13-month Gregorian-leap calendar, then switch the timeline to it.
+  await page.getByRole("button", { name: "Timeline" }).click();
+  const centre = page.getByLabel("Centre of the view");
+  await expect(centre).toHaveText(/ AF$/);
+  await page.getByLabel("Display calendar").selectOption({ label: "Manage calendars…" });
+  await expect(page.getByRole("heading", { name: "Calendars", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "New calendar" }).click();
+  await page.getByLabel("Calendar name").fill("Dwarven Reckoning");
+  await page.getByRole("button", { name: "Add month" }).click();
+  await expect(page.getByLabel("Month 13 name")).toBeVisible();
+  await page.getByLabel("This calendar has leap years").check();
+  await page.getByLabel("Leap preset").selectOption("gregorian");
+  // The live preview reflects the unsaved draft: 13 x 30 days, one leap day.
+  await expect(page.getByRole("complementary", { name: "Preview" })).toContainText(
+    "Normal year: 390 days",
+  );
+  await expect(page.getByRole("complementary", { name: "Preview" })).toContainText(
+    "leap year: 391 days",
+  );
+  await page.getByRole("button", { name: "Create calendar" }).click();
+  await expect(page.getByRole("heading", { name: "Editing Dwarven Reckoning" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Timeline" }).click();
+  await page.getByLabel("Display calendar").selectOption({ label: "Dwarven Reckoning" });
+  // The same moment, named by the new calendar (its single era is the "FA" one).
+  await expect(centre).toHaveText(/ FA$/);
+
   // 7. Relationship: Aldric is located in Port Hallow, then show it in the graph.
   await page.getByRole("button", { name: "Aldric the Wanderer" }).first().click();
   await expect(page.getByRole("textbox", { name: "Name" })).toHaveValue("Aldric the Wanderer");
