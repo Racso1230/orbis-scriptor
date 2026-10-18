@@ -197,3 +197,157 @@
 .tiptap .mention.ProseMirror-selectednode {
   outline: 2px solid var(--ring);
 }
+
+/* --- Print view (/print/...) ------------------------------------------------ */
+.print-root {
+  min-height: 100vh;
+  background: #fff;
+  color: #111;
+  color-scheme: light;
+}
+.print-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  border-bottom: 1px solid #e5e5e5;
+  background: #fafafa;
+  padding: 0.5rem 1rem;
+}
+.print-pages {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 11pt;
+  line-height: 1.5;
+}
+.print-pages h1 {
+  font-size: 22pt;
+  line-height: 1.2;
+  margin: 0;
+}
+.print-pages h2 {
+  font-size: 14pt;
+  margin: 1.25rem 0 0.4rem;
+}
+.print-pages h3 {
+  font-size: 12pt;
+  margin: 0.9rem 0 0.3rem;
+}
+.print-pages a {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+.print-pages img {
+  max-width: 100%;
+  height: auto;
+}
+.print-pages ul,
+.print-pages ol {
+  margin: 0.3rem 0;
+  padding-left: 1.4rem;
+}
+.print-pages ul {
+  list-style: disc;
+}
+.print-pages ol {
+  list-style: decimal;
+}
+.print-pages table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.print-pages th,
+.print-pages td {
+  border: 1px solid #999;
+  padding: 0.25rem 0.5rem;
+  vertical-align: top;
+}
+.print-pages blockquote {
+  border-left: 3px solid #bbb;
+  margin: 0.5rem 0;
+  padding-left: 0.8rem;
+  color: #333;
+}
+.print-pages .mention {
+  font-weight: 600;
+}
+.print-type,
+.print-muted {
+  color: #555;
+}
+.print-summary {
+  font-style: italic;
+  margin: 0.6rem 0;
+}
+.print-fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.15rem 1rem;
+  margin: 0.8rem 0;
+}
+.print-fields > div {
+  display: contents;
+}
+.print-fields dt {
+  font-weight: 600;
+}
+.print-fields dd {
+  margin: 0;
+}
+.print-entity {
+  margin-top: 3rem;
+}
+.print-title {
+  padding: 6rem 0 2rem;
+  text-align: center;
+}
+.print-title h1 {
+  font-size: 34pt;
+}
+.print-toc {
+  margin-top: 2rem;
+}
+.print-toc ul {
+  columns: 2;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 18mm 16mm;
+  }
+  html,
+  body,
+  .print-root {
+    background: #fff !important;
+    color: #000 !important;
+  }
+  .print-pages {
+    max-width: none;
+    padding: 0;
+  }
+  /* Every entity starts on a new page; the title page and contents come first. */
+  .print-entity {
+    margin-top: 0;
+    break-before: page;
+  }
+  .print-toc {
+    break-before: page;
+  }
+  .print-pages h1,
+  .print-pages h2,
+  .print-pages h3 {
+    break-after: avoid;
+  }
+  .print-pages img,
+  .print-pages table,
+  .print-pages blockquote,
+  .print-pages li {
+    break-inside: avoid;
+  }
+}

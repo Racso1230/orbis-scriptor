@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { Trash2 } from "lucide-react";
+import { Printer, Trash2 } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -47,7 +47,8 @@ function combineStatus(a: SaveStatus, b: SaveStatus): SaveStatus {
 
 /** Route component for `/world/entity/$id`. */
 export function EntityPage() {
-  const { id } = useParams({ from: "/world/entity/$id" });
+  // "/shell" is the pathless layout route that holds the app header (see router.tsx).
+  const { id } = useParams({ from: "/shell/world/entity/$id" });
   const entity = useEntity(id);
   const types = useEntityTypes();
 
@@ -145,6 +146,15 @@ function EntityForm({ entity, type }: { entity: Entity; type: EntityTypeDef | un
         />
         <Badge variant="secondary">{type?.label ?? entity.type}</Badge>
         <SaveIndicator status={status} error={error} />
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Print or save as PDF"
+          title="Print / Save as PDF…"
+          onClick={() => void navigate({ to: "/print/entity/$id", params: { id: entity.id } })}
+        >
+          <Printer />
+        </Button>
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button variant="ghost" size="icon" aria-label="Delete entity">

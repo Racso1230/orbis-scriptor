@@ -1,5 +1,13 @@
 import { useNavigate } from "@tanstack/react-router";
-import { CalendarCog, Database, FlaskConical, FileDown, Settings, Shapes } from "lucide-react";
+import {
+  CalendarCog,
+  Database,
+  FlaskConical,
+  FileDown,
+  Printer,
+  Settings,
+  Shapes,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -54,6 +62,9 @@ export function DebugMenu() {
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={openExport}>
             <FileDown /> Export to Markdown…
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => void navigate({ to: "/print/world" })}>
+            <Printer /> Print world…
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuLabel>Maintenance</DropdownMenuLabel>

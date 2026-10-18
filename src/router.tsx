@@ -10,6 +10,7 @@ import { EntityPage } from "@/features/entities/entity-page";
 import { currentWorldQuery } from "@/features/worlds/queries";
 import { GraphPage } from "@/features/relationships/graph-view";
 import { CalendarsPage } from "@/features/calendars/calendars-page";
+import { PrintEntityPage, PrintWorldPage } from "@/features/print/print-pages";
 import { TypesPage } from "@/features/types/types-page";
 import { TimelinePage } from "@/features/timeline/timeline-view";
 import { SettingsPage } from "@/features/settings/settings-page";
@@ -18,11 +19,18 @@ import { WorldEmptyState, WorldLayout } from "@/features/worlds/world-layout";
 import { queryClient } from "@/lib/query-client";
 
 // Code-based routes (no file-based routing plugin). Add new routes here.
-const rootRoute = createRootRoute({ component: AppShell });
+const rootRoute = createRootRoute();
+
+// Everything with the header bar. The print views sit next to it, outside the shell.
+const shellRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: "shell",
+  component: AppShell,
+});
 
 // `/` — welcome screen. If a world is already open, go straight to it.
 const indexRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => shellRoute,
   path: "/",
   beforeLoad: async () => {
     const world = await queryClient.query({ ...currentWorldQuery, staleTime: "static" });
@@ -33,7 +41,7 @@ const indexRoute = createRoute({
 
 // `/world` — everything that needs an open world. Guarded: no world → welcome.
 const worldRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => shellRoute,
   path: "/world",
   beforeLoad: async () => {
     const world = await queryClient.query({ ...currentWorldQuery, staleTime: "static" });
@@ -85,22 +93,46 @@ const graphRoute = createRoute({
 
 // `/settings` - app settings; reachable from the welcome page and from inside a world.
 const settingsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => shellRoute,
   path: "/settings",
   component: SettingsPage,
 });
 
+// `/print/...` - print-friendly views, rendered without the app shell (no header,
+// sidebar or tabs). They need an open world, like everything under `/world`.
+const printRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/print",
+  beforeLoad: async () => {
+    const world = await queryClient.query({ ...currentWorldQuery, staleTime: "static" });
+    if (!world) throw redirect({ to: "/" });
+  },
+});
+const printEntityRoute = createRoute({
+  getParentRoute: () => printRoute,
+  path: "/entity/$id",
+  component: PrintEntityPage,
+});
+const printWorldRoute = createRoute({
+  getParentRoute: () => printRoute,
+  path: "/world",
+  component: PrintWorldPage,
+});
+
 const routeTree = rootRoute.addChildren([
-  indexRoute,
-  settingsRoute,
-  worldRoute.addChildren([
-    worldIndexRoute,
-    entityRoute,
-    timelineRoute,
-    calendarsRoute,
-    typesRoute,
-    graphRoute,
+  shellRoute.addChildren([
+    indexRoute,
+    settingsRoute,
+    worldRoute.addChildren([
+      worldIndexRoute,
+      entityRoute,
+      timelineRoute,
+      calendarsRoute,
+      typesRoute,
+      graphRoute,
+    ]),
   ]),
+  printRoute.addChildren([printEntityRoute, printWorldRoute]),
 ]);
 
 // Hash history keeps URLs working both in `tauri dev` and in the packaged app,

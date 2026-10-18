@@ -8,6 +8,7 @@ import {
   FlaskConical,
   Network,
   Plus,
+  Printer,
   RefreshCw,
   Shapes,
   Settings,
@@ -146,6 +147,15 @@ export function CommandPalette() {
       run: () => {
         changeOpen(false);
         openExport();
+      },
+    },
+    {
+      id: "print-world",
+      label: "Print world…",
+      icon: <Printer />,
+      run: () => {
+        changeOpen(false);
+        void navigate({ to: "/print/world" });
       },
     },
     {
