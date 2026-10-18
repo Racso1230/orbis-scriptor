@@ -276,16 +276,16 @@ CREATE INDEX idx_events_start ON events(start_day);
 
 ### Phase 10 — Map editor v2 (v0.2)
 
-- [ ] Blank map: create a map without an image — choose a size and a background (parchment, ocean, plain colour) — so the drawing tools work from scratch
-- [ ] Multiple layers: add, rename, reorder, hide, lock
-- [ ] Freehand and path tools (rivers, roads, borders) with smoothing
-- [ ] Area/polygon tool (kingdoms, regions) with fill styles; areas can link to entities
+- [x] Blank map: create a map without an image — choose a size and a background (parchment, ocean, plain colour) — so the drawing tools work from scratch
+- [x] Multiple layers: add, rename, reorder, hide, lock
+- [x] Freehand and path tools (rivers, roads, borders) with smoothing
+- [x] Area/polygon tool (kingdoms, regions) with fill styles; areas can link to entities
 - [ ] Text labels, including labels curved along paths
 - [ ] Icon/stamp library (cities, castles, mountains, forests)
-- [ ] Undo/redo for all map operations
+- [x] Undo/redo for all map operations
 - [ ] Export map as PNG
 
-**Backend status:** the Phase 10 Rust backend is done (migration 009, blank maps, layer commands and locking, path/area/label/stamp geometry, client ids and atomic `apply_map_ops` for undo/redo, PNG `save_export`, sample-map shapes, `dev_seed_map_shapes`). The checkboxes above stay open until the UI exists.
+**Backend status:** the Phase 10 Rust backend is done (migration 009, blank maps, layer commands and locking, path/area/label/stamp geometry, client ids and atomic `apply_map_ops` for undo/redo, PNG `save_export`, sample-map shapes, `dev_seed_map_shapes`). Frontend (done so far): blank-map creation and backgrounds, layers panel, rendering of every object kind, Path/Freehand/Area tools, properties panel and undo/redo. Labels, stamps and PNG export stay open (Part 3).
 
 **Tests:** Rust services for blank maps, layers (order, visibility, locking), every geometry variant (round trip and validation), label detach on path delete, client-provided ids, atomic op batches and PNG export; Vitest for the undo/redo stack, path smoothing and label placement along a path; Playwright flow for drawing, undo/redo and export.
 

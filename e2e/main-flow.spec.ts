@@ -84,7 +84,7 @@ test("create world, entities, lore mention, search, pin and event", async () => 
     .click();
   // The picker closes once the pin has been created for the chosen entity.
   await expect(page.getByPlaceholder(/Search entities, or type a name/)).toHaveCount(0);
-  await expect(page.getByText("No pins yet")).toHaveCount(0);
+  await expect(page.getByText("Nothing drawn yet")).toHaveCount(0);
 
   // The location now lists the map under "appears on maps". Scope the check
   // to that panel: the map's name also appears (sometimes hidden) in the
@@ -94,6 +94,43 @@ test("create world, entities, lore mention, search, pin and event", async () => 
   const appearsOn = page.getByRole("region", { name: "Appears on maps" });
   await expect(appearsOn.getByRole("heading")).toHaveText("Appears on maps (1)");
   await expect(appearsOn.getByRole("button", { name: /Shattered Coast/ })).toBeVisible();
+
+  // Draw a river with the Path tool, then undo and redo it (buttons and keys).
+  const properties = page.getByRole("region", { name: "Properties" });
+  await appearsOn.getByRole("button", { name: /Shattered Coast/ }).click();
+  await expect(page.getByRole("button", { name: /^Path/ })).toBeVisible();
+  const mapBox = await page.locator("canvas").first().boundingBox();
+  if (!mapBox) throw new Error("map canvas has no bounding box");
+  await page.getByRole("button", { name: /^Path/ }).click();
+  await page.mouse.click(mapBox.x + mapBox.width * 0.2, mapBox.y + mapBox.height * 0.3);
+  await page.mouse.click(mapBox.x + mapBox.width * 0.35, mapBox.y + mapBox.height * 0.6);
+  await page.mouse.dblclick(mapBox.x + mapBox.width * 0.5, mapBox.y + mapBox.height * 0.4);
+  await expect(properties.getByRole("heading", { level: 3 })).toHaveText("Path properties");
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(properties).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Redo" })).toBeEnabled();
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(page.getByRole("button", { name: "Redo" })).toBeDisabled();
+  await page.keyboard.press("Control+z");
+  await expect(page.getByRole("button", { name: "Redo" })).toBeEnabled();
+  await page.keyboard.press("Control+Shift+z");
+  await expect(page.getByRole("button", { name: "Redo" })).toBeDisabled();
+  await page.getByRole("button", { name: /^Select/ }).click();
+
+  // A blank map: start blank, draw an area on it.
+  await createEntity("Map", "Blank Realm");
+  await page.getByRole("button", { name: "Start blank" }).click();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Map settings" })).toBeVisible();
+  const blankCanvas = page.locator("canvas").first();
+  const blankBox = await blankCanvas.boundingBox();
+  if (!blankBox) throw new Error("blank map canvas has no bounding box");
+  await page.getByRole("button", { name: /^Area/ }).click();
+  await page.mouse.click(blankBox.x + blankBox.width * 0.3, blankBox.y + blankBox.height * 0.3);
+  await page.mouse.click(blankBox.x + blankBox.width * 0.6, blankBox.y + blankBox.height * 0.3);
+  await page.mouse.click(blankBox.x + blankBox.width * 0.5, blankBox.y + blankBox.height * 0.6);
+  await page.keyboard.press("Enter");
+  await expect(properties.getByRole("heading", { level: 3 })).toHaveText("Area properties");
 
   // 6. Event: double-click the timeline to create one.
   await page.getByRole("button", { name: "Timeline" }).click();
