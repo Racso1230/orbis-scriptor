@@ -1,12 +1,13 @@
 import { CalendarDays } from "lucide-react";
 import { useOpenEntity } from "@/features/entities/use-open-entity";
+import { useDisplayCalendar } from "@/features/calendars/queries";
 import { formatDate } from "./calendar";
-import { useDefaultCalendar, useEventsForEntity } from "./queries";
+import { useEventsForEntity } from "./queries";
 
 /** "Events" section on non-event pages. Renders nothing when the entity has none. */
 export function EntityEvents({ entityId }: { entityId: string }) {
   const events = useEventsForEntity(entityId);
-  const calendar = useDefaultCalendar();
+  const calendar = useDisplayCalendar();
   const open = useOpenEntity();
 
   if (!events.data || events.data.length === 0) return null;

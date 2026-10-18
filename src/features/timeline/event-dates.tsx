@@ -11,9 +11,10 @@ import {
 } from "@/components/ui/select";
 import { useAutosave, type SaveStatus } from "@/features/entities/use-autosave";
 import { useSettingsValue } from "@/features/settings/queries";
-import type { CalendarDefinition, EventSummary } from "@/lib/bindings";
+import { useCalendars, useDisplayCalendar } from "@/features/calendars/queries";
+import type { Calendar, EventSummary } from "@/lib/bindings";
 import { DateEditor } from "./date-editor";
-import { useDefaultCalendar, useEvent, useUpdateEventDates } from "./queries";
+import { useEvent, useUpdateEventDates } from "./queries";
 import { useOpenTimeline } from "./use-open-timeline";
 
 const IMPORTANCE_LABELS = ["Minor", "Low", "Normal", "High", "Major"];
@@ -26,15 +27,19 @@ interface Props {
 /** "When" section of an event page: start date, optional end date, importance. */
 export function EventDates({ entityId, onStatusChange }: Props) {
   const event = useEvent(entityId);
-  const calendar = useDefaultCalendar();
+  const calendars = useCalendars();
+  const display = useDisplayCalendar();
 
-  if (event.isPending || calendar.isPending) {
+  if (event.isPending || calendars.isPending || display.isPending) {
     return <p className="text-sm text-muted-foreground">Loading dates…</p>;
   }
-  if (event.error || !event.data || !calendar.data) {
+  if (event.error || !event.data || !calendars.data || !display.data) {
     return (
       <p className="text-sm text-destructive">
-        {event.error?.message ?? calendar.error?.message ?? "Could not load the event dates."}
+        {event.error?.message ??
+          calendars.error?.message ??
+          display.error?.message ??
+          "Could not load the event dates."}
       </p>
     );
   }
@@ -42,13 +47,16 @@ export function EventDates({ entityId, onStatusChange }: Props) {
     <EventDatesForm
       key={entityId}
       event={event.data}
-      def={calendar.data.definition}
+      calendars={calendars.data}
+      displayCalendarId={display.data.id}
       onStatusChange={onStatusChange}
     />
   );
 }
 
 interface Draft {
+  /** The calendar the dates are entered in (recorded on the event). */
+  calendarId: string;
   startDay: number;
   endDay: number | null;
   importance: number;
@@ -56,16 +64,19 @@ interface Draft {
 
 function EventDatesForm({
   event,
-  def,
+  calendars,
+  displayCalendarId,
   onStatusChange,
 }: {
   event: EventSummary;
-  def: CalendarDefinition;
+  calendars: Calendar[];
+  displayCalendarId: string;
   onStatusChange: Props["onStatusChange"];
 }) {
   const updateDates = useUpdateEventDates();
   const openTimeline = useOpenTimeline();
   const [draft, setDraft] = useState<Draft>({
+    calendarId: displayCalendarId,
     startDay: event.startDay,
     endDay: event.endDay,
     importance: event.importance,
@@ -109,7 +120,9 @@ function EventDatesForm({
       </div>
 
       <DateEditor
-        def={def}
+        calendars={calendars}
+        calendarId={draft.calendarId}
+        onCalendarChange={(calendarId) => setDraft((d) => ({ ...d, calendarId }))}
         day={draft.startDay}
         label="Starts"
         onChange={(startDay) => setDraft((d) => ({ ...d, startDay }))}
@@ -131,7 +144,8 @@ function EventDatesForm({
       {draft.endDay !== null && (
         <DateEditor
           key={endEditorKey}
-          def={def}
+          calendars={calendars}
+          calendarId={draft.calendarId}
           day={draft.endDay}
           label="Ends"
           onChange={(endDay) => setDraft((d) => ({ ...d, endDay }))}

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlaskConical, Maximize2, Minus, Plus, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CalendarSwitcher } from "@/features/calendars/calendar-switcher";
+import { useDisplayCalendar } from "@/features/calendars/queries";
 import { useOpenEntity } from "@/features/entities/use-open-entity";
 import { useIndexMaintenance } from "@/features/search/use-index-maintenance";
 import type { CalendarDefinition, EventSummary } from "@/lib/bindings";
@@ -22,7 +24,7 @@ import {
 } from "./scale";
 import { generateTicks } from "./ticks";
 import { useTimelineStore } from "./timeline-store";
-import { useCreateEvent, useDefaultCalendar, useEvents, useFetchAllEvents } from "./queries";
+import { useCreateEvent, useEvents, useFetchAllEvents } from "./queries";
 
 const AXIS_HEIGHT = 36;
 const LANES_TOP = 56;
@@ -45,7 +47,7 @@ interface Hover {
 
 /** Route component for `/world/timeline`. */
 export function TimelinePage() {
-  const calendar = useDefaultCalendar();
+  const calendar = useDisplayCalendar();
   if (calendar.isPending) {
     return <p className="p-6 text-sm text-muted-foreground">Loading…</p>;
   }
@@ -56,7 +58,8 @@ export function TimelinePage() {
       </p>
     );
   }
-  // Events carry a calendarId, but worlds only have the default calendar for now.
+  // Dates are drawn in the display calendar; day numbers are absolute, so an
+  // event's own calendarId (where it was entered) does not change where it sits.
   return <TimelineView def={calendar.data.definition} />;
 }
 
@@ -288,6 +291,7 @@ function TimelineView({ def }: { def: CalendarDefinition }) {
           {centerLabel}
         </span>
         <div className="ml-auto flex items-center gap-1">
+          <CalendarSwitcher />
           {maintenance.status && (
             <span
               role="status"

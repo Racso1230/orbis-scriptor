@@ -12,22 +12,12 @@ import { unwrap } from "@/lib/unwrap";
 export const eventKeys = {
   /** Prefix for everything event-related, so one call invalidates it all. */
   all: ["events"] as const,
-  calendar: ["calendars", "default"] as const,
   window: (from: number, to: number) => ["events", "window", from, to] as const,
   everything: ["events", "everything"] as const,
   detail: (id: string) => ["events", "detail", id] as const,
   involved: (eventId: string) => ["events", "involved", eventId] as const,
   forEntity: (entityId: string) => ["events", "for-entity", entityId] as const,
 };
-
-/** The calendar used to format and edit dates (the world's default one). */
-export function useDefaultCalendar() {
-  return useQuery({
-    queryKey: eventKeys.calendar,
-    queryFn: () => unwrap(commands.getDefaultCalendar()),
-    staleTime: Infinity,
-  });
-}
 
 /**
  * Events overlapping `[from, to]`. Pass a window that is already padded and
@@ -98,12 +88,15 @@ export function useUpdateEventDates() {
       startDay,
       endDay,
       importance = null,
+      calendarId = null,
     }: {
       entityId: string;
       startDay: number;
       endDay: number | null;
       importance?: number | null;
-    }) => unwrap(commands.updateEventDates(entityId, startDay, endDay, importance, null)),
+      /** The calendar the user typed the dates in (days are absolute either way). */
+      calendarId?: string | null;
+    }) => unwrap(commands.updateEventDates(entityId, startDay, endDay, importance, calendarId)),
     onSuccess: (event: EventSummary) => {
       queryClient.setQueryData(eventKeys.detail(event.entityId), event);
       // Not awaited, so autosave reports "Saved" as soon as the save is done.
