@@ -16,10 +16,12 @@ use uuid::Uuid;
 use crate::error::{AppError, AppResult};
 use crate::models::calendar::{CalendarDefinition, Era, LeapCycle, LeapRule, Month};
 use crate::models::entity::{EntityPatch, NewEntity};
+use crate::models::entity_type::{FieldInput, FieldKind};
 use crate::models::map::{Asset, MapGeometry, NewMapObject, Point};
 use crate::services::world::{self, ASSETS_DIR};
 use crate::services::{
-    assets, calendar, calendar_manager, documents, entities, events, maps, relationships,
+    assets, calendar, calendar_manager, documents, entities, entity_types, events, maps,
+    relationships,
 };
 use crate::state::WorldHandle;
 
@@ -138,6 +140,58 @@ fn entity_seeds() -> Vec<EntitySeed> {
     ]
 }
 
+/// The custom "Deity" type, to show off user-defined types and fields.
+fn deity_fields() -> Vec<FieldInput> {
+    let field = |label: &str, kind: FieldKind, options: &[&str]| FieldInput {
+        key: None,
+        label: label.into(),
+        kind,
+        options: options.iter().map(|o| (*o).to_owned()).collect(),
+    };
+    vec![
+        field(
+            "Domain",
+            FieldKind::Select,
+            &["sea", "forge", "harvest", "war", "death"],
+        ),
+        field("Symbol", FieldKind::Text, &[]),
+        field(
+            "Worshippers",
+            FieldKind::EntityRef {
+                allowed_types: vec!["faction".into()],
+                multiple: true,
+            },
+            &[],
+        ),
+    ]
+}
+
+/// (name, summary, domain, symbol, worshipping factions)
+type DeitySeed = (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static [&'static str],
+);
+
+const DEITIES: [DeitySeed; 2] = [
+    (
+        "Aelith, Lady of Tides",
+        "Goddess of the inland sea, prayed to before every voyage.",
+        "sea",
+        "A silver wave",
+        &["The Tidewardens", "House Varn"],
+    ),
+    (
+        "Korrath the Forgefather",
+        "A smith-god whose old forges are said to sleep under the Ember Spine.",
+        "forge",
+        "An anvil and a crescent moon",
+        &[],
+    ),
+];
+
 /// (source name, kind, target name, custom label). Read each row as
 /// "source <kind> target", e.g. Aldous *parent of* Isolde.
 type RelationshipSeed = (
@@ -207,6 +261,10 @@ fn lore_seeds() -> Vec<(&'static str, &'static str)> {
         (
             "Archmage Teodric Vale",
             "Teodric has lived in [[Highmarch Citadel]] for two centuries. He lent his magic to the defence of the coast in [[The Tide War]] and has never forgiven [[House Varn]] for thanking him with a medal.\n\nHe is certain that the shards of [[The Shattered Crown]] lie somewhere in [[The Ember Spine]].",
+        ),
+        (
+            "Aelith, Lady of Tides",
+            "Sailors leave a silver coin on the quay of [[Port Veyra]] before they sail. [[The Tidewardens]] keep her shrine, and [[Captain Joren Hale]] never leaves harbour without visiting it.",
         ),
         (
             "House Varn",
@@ -595,6 +653,41 @@ pub fn populate(conn: &Connection, assets_dir: &Path) -> AppResult<()> {
         ids.insert(name.into(), entity.id);
     }
 
+    // A custom entity type with two entities of that type. The worshipper
+    // references are entity ids, which also creates `field_ref` links.
+    let deity = entity_types::create(
+        conn,
+        "Deity",
+        "Deities",
+        "sparkles",
+        "#a855f7",
+        deity_fields(),
+    )?;
+    for (name, summary, domain, symbol, worshippers) in DEITIES {
+        let entity = entities::create(
+            conn,
+            NewEntity {
+                entity_type: deity.key.clone(),
+                name: name.into(),
+            },
+        )?;
+        let worshipper_ids: Vec<&String> = worshippers.iter().filter_map(|n| ids.get(*n)).collect();
+        entities::update(
+            conn,
+            &entity.id,
+            EntityPatch {
+                summary: Some(summary.into()),
+                properties: Some(json!({
+                    "domain": domain,
+                    "symbol": symbol,
+                    "worshippers": worshipper_ids,
+                })),
+                ..Default::default()
+            },
+        )?;
+        ids.insert(name.into(), entity.id);
+    }
+
     // Creating a `map` entity also creates its `maps` row and default layer.
     let map = entities::create(
         conn,
@@ -746,6 +839,22 @@ mod tests {
         assert_eq!(count("note"), 1);
         assert_eq!(count("map"), 1);
         assert_eq!(count("event"), 5);
+        assert_eq!(count("custom-deity"), 2);
+    }
+
+    #[test]
+    fn deities_are_a_custom_type_with_reference_fields() {
+        use crate::models::link::KIND_FIELD_REF;
+        let (_dir, w) = sample();
+        let types = entity_types::merged(&w.conn).unwrap();
+        let deity = types.iter().find(|t| t.key == "custom-deity").unwrap();
+        assert!(!deity.builtin);
+        assert_eq!(deity.fields.len(), 3);
+        let aelith = id_of(&w.conn, "Aelith, Lady of Tides");
+        let refs = crate::db::links::targets_for_source(&w.conn, &aelith, KIND_FIELD_REF).unwrap();
+        assert_eq!(refs.len(), 2);
+        let tidewardens = id_of(&w.conn, "The Tidewardens");
+        assert!(refs.contains(&tidewardens));
     }
 
     #[test]
