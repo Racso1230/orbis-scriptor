@@ -285,6 +285,10 @@ CREATE INDEX idx_events_start ON events(start_day);
 - [ ] Undo/redo for all map operations
 - [ ] Export map as PNG
 
+**Tests:** Rust services for blank maps, layers (order, visibility, locking), every geometry variant (round trip and validation), label detach on path delete, client-provided ids, atomic op batches and PNG export; Vitest for the undo/redo stack, path smoothing and label placement along a path; Playwright flow for drawing, undo/redo and export.
+
+**Acceptance:** create a blank parchment map, add a 'Borders' layer, draw a river path, a kingdom area linked to a faction, a label curved along the river and a few stamps; undo/redo several steps; hide and lock layers; export to PNG and open the file.
+
 ### Phase 11 — Custom calendars and eras (v0.3)
 
 - [ ] Calendar editor: months and lengths, weekdays, eras, optional leap rules
