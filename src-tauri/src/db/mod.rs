@@ -6,6 +6,7 @@ pub mod documents;
 pub mod entities;
 pub mod entity_types;
 pub mod events;
+pub mod gallery;
 pub mod links;
 pub mod maps;
 pub mod migrations;

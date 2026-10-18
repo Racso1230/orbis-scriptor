@@ -53,6 +53,8 @@ use crate::services::{
 pub const MARKER_FILE: &str = ".orbis-export";
 /// Name of the index note.
 pub const INDEX_FILE: &str = "README.md";
+/// Heading of the generated gallery section (skipped again on import).
+pub const GALLERY_HEADING: &str = "Gallery";
 /// Longest file name stem we write (in characters).
 const MAX_STEM_CHARS: usize = 100;
 
@@ -281,10 +283,14 @@ struct Front {
     lines: Vec<String>,
 }
 
+/// A string as a YAML double-quoted scalar (JSON strings are valid YAML).
+fn json_string(value: &str) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "\"\"".into())
+}
+
 impl Front {
     fn string(&mut self, key: &str, value: &str) {
-        let quoted = serde_json::to_string(value).unwrap_or_else(|_| "\"\"".into());
-        self.lines.push(format!("{key}: {quoted}"));
+        self.lines.push(format!("{key}: {}", json_string(value)));
     }
 
     fn raw(&mut self, key: &str, value: impl std::fmt::Display) {
@@ -309,7 +315,7 @@ impl Front {
 
 /// Front matter keys the export writes itself; a field with one of these keys
 /// is written as `field_<key>` instead.
-const RESERVED_KEYS: [&str; 14] = [
+const RESERVED_KEYS: [&str; 16] = [
     "id",
     "type",
     "type_key",
@@ -324,6 +330,8 @@ const RESERVED_KEYS: [&str; 14] = [
     "end",
     "end_day",
     "importance",
+    "portrait",
+    "images",
 ];
 
 fn format_day(def: &CalendarDefinition, day: i64) -> String {
@@ -402,7 +410,7 @@ struct RenderCtx<'a> {
 /// A map background that must be copied: (source file, file name in `assets/`).
 type AssetCopy = (PathBuf, String);
 
-fn render_note(ctx: &RenderCtx, entry: &Entry) -> AppResult<(String, Option<AssetCopy>)> {
+fn render_note(ctx: &RenderCtx, entry: &Entry) -> AppResult<(String, Vec<AssetCopy>)> {
     let conn = ctx.conn;
     let plan = ctx.plan;
     let e = &entry.entity;
@@ -461,7 +469,7 @@ fn render_note(ctx: &RenderCtx, entry: &Entry) -> AppResult<(String, Option<Asse
     }
 
     // Map picture.
-    let mut copy: Option<AssetCopy> = None;
+    let mut copies: Vec<AssetCopy> = Vec::new();
     let mut map_lists: Vec<String> = Vec::new();
     if e.entity_type == "map"
         && let Some(info) = db::maps::get_map_by_entity(conn, &e.id)?
@@ -475,7 +483,7 @@ fn render_note(ctx: &RenderCtx, entry: &Entry) -> AppResult<(String, Option<Asse
                     source.file_name().map(|n| n.to_string_lossy().into_owned())
             {
                 body.push(format!("![[{ASSETS_DIR}/{file_name}]]"));
-                copy = Some((source, file_name));
+                copies.push((source, file_name));
             }
         }
         map_lists = map_object_lists(conn, plan, &info.id)?;
@@ -492,6 +500,68 @@ fn render_note(ctx: &RenderCtx, entry: &Entry) -> AppResult<(String, Option<Asse
         }
     }
     body.extend(map_lists);
+
+    // Gallery: `portrait` and `images` in the front matter (so an import can
+    // restore captions and the portrait) and a "## Gallery" section with the
+    // pictures, portrait first, so Obsidian shows them.
+    if ctx.options.include_assets {
+        let images = db::gallery::list_for_entity(conn, &e.id)?;
+        let mut shown: Vec<(&crate::models::gallery::EntityImage, String)> = Vec::new();
+        for image in &images {
+            let Some(asset) = db::assets::get(conn, &image.asset_id)? else {
+                continue;
+            };
+            let source = assets::asset_file(ctx.assets_dir, &asset.id, &asset.mime);
+            if !source.is_file() {
+                continue;
+            }
+            let Some(file_name) = source.file_name().map(|n| n.to_string_lossy().into_owned())
+            else {
+                continue;
+            };
+            copies.push((source, file_name.clone()));
+            shown.push((image, format!("{ASSETS_DIR}/{file_name}")));
+        }
+        if !shown.is_empty() {
+            if let Some((_, path)) = shown.iter().find(|(i, _)| i.is_portrait) {
+                front.string("portrait", path);
+            }
+            front.lines.push("images:".into());
+            for (image, path) in &shown {
+                front.lines.push(format!("  - file: {}", json_string(path)));
+                if !image.caption.is_empty() {
+                    front
+                        .lines
+                        .push(format!("    caption: {}", json_string(&image.caption)));
+                }
+            }
+            // Portrait first in the visible section.
+            let mut ordered: Vec<&(&crate::models::gallery::EntityImage, String)> =
+                shown.iter().collect();
+            ordered.sort_by_key(|(i, _)| !i.is_portrait);
+            let lines: Vec<String> = ordered
+                .iter()
+                .map(|(image, path)| {
+                    let alt = clean_alias(&image.caption);
+                    if alt.is_empty() {
+                        format!("![[{path}]]")
+                    } else {
+                        format!("![[{path}|{alt}]]")
+                    }
+                })
+                .collect();
+            body.push(format!(
+                "## {GALLERY_HEADING}
+
+{}",
+                lines.join(
+                    "
+
+"
+                )
+            ));
+        }
+    }
 
     // Events: who took part / what the entity took part in.
     if ctx.options.include_events {
@@ -538,7 +608,7 @@ fn render_note(ctx: &RenderCtx, entry: &Entry) -> AppResult<(String, Option<Asse
     }
 
     let text = format!("{}\n{}\n", front.finish(), body.join("\n\n"));
-    Ok((text, copy))
+    Ok((text, copies))
 }
 
 fn event_dates(cal: &CalendarDefinition, start: i64, end: Option<i64>) -> String {
@@ -704,21 +774,21 @@ fn write_all(
 
     fs::write(out.join(MARKER_FILE), "{}\n")?;
     for entry in plan.entries.iter().filter(|e| e.included) {
-        let (text, copy) = render_note(&ctx, entry)?;
+        let (text, copies) = render_note(&ctx, entry)?;
         let dir = out.join(&entry.folder);
         fs::create_dir_all(&dir)?;
         fs::write(dir.join(format!("{}.md", entry.stem)), text)?;
         files += 1;
         done += 1;
-        if let Some((source, name)) = copy
-            && copied.insert(name.clone())
-        {
-            fs::create_dir_all(out.join(ASSETS_DIR))?;
-            fs::copy(&source, out.join(ASSETS_DIR).join(&name))?;
-            files += 1;
-            total += 1;
-            done += 1;
-            on_progress(done, total, "assets");
+        for (source, name) in copies {
+            if copied.insert(name.clone()) {
+                fs::create_dir_all(out.join(ASSETS_DIR))?;
+                fs::copy(&source, out.join(ASSETS_DIR).join(&name))?;
+                files += 1;
+                total += 1;
+                done += 1;
+                on_progress(done, total, "assets");
+            }
         }
         if done.is_multiple_of(step) {
             on_progress(done, total, "writing");

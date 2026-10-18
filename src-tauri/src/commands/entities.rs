@@ -3,7 +3,7 @@ use tauri::State;
 use crate::error::AppResult;
 use crate::models::entity::{Entity, EntityPatch, EntitySummary, NewEntity};
 use crate::models::entity_type::EntityTypeDef;
-use crate::services::{entities, entity_types};
+use crate::services::{entities, entity_types, gallery, world};
 use crate::state::AppState;
 
 /// All entity types of the open world with their fields: the built-in
@@ -22,13 +22,22 @@ pub fn list_entities(
     state: State<'_, AppState>,
     entity_type: Option<String>,
 ) -> AppResult<Vec<EntitySummary>> {
-    state.with_world(|w| entities::list(&w.conn, entity_type.as_deref()))
+    state.with_world(|w| {
+        let mut items = entities::list(&w.conn, entity_type.as_deref())?;
+        gallery::attach_portraits(&w.conn, &w.path.join(world::ASSETS_DIR), &mut items)?;
+        Ok(items)
+    })
 }
 
+/// One entity with its tags, favourite flag and portrait.
 #[tauri::command]
 #[specta::specta]
 pub fn get_entity(state: State<'_, AppState>, id: String) -> AppResult<Entity> {
-    state.with_world(|w| entities::get(&w.conn, &id))
+    state.with_world(|w| {
+        let mut entity = entities::get(&w.conn, &id)?;
+        gallery::attach_portrait(&w.conn, &w.path.join(world::ASSETS_DIR), &mut entity)?;
+        Ok(entity)
+    })
 }
 
 #[tauri::command]
@@ -44,13 +53,18 @@ pub fn update_entity(
     id: String,
     patch: EntityPatch,
 ) -> AppResult<Entity> {
-    state.with_world(|w| entities::update(&w.conn, &id, patch))
+    state.with_world(|w| {
+        let mut entity = entities::update(&w.conn, &id, patch)?;
+        gallery::attach_portrait(&w.conn, &w.path.join(world::ASSETS_DIR), &mut entity)?;
+        Ok(entity)
+    })
 }
 
 #[tauri::command]
 #[specta::specta]
 pub fn delete_entity(state: State<'_, AppState>, id: String) -> AppResult<()> {
-    state.with_world(|w| entities::delete(&w.conn, &id))
+    state
+        .with_world(|w| entities::delete_with_assets(&w.conn, &w.path.join(world::ASSETS_DIR), &id))
 }
 
 /// Stars (`true`) or un-stars an entity. Not an edit: `updatedAt` stays.
@@ -68,7 +82,11 @@ pub fn set_favorite(
 #[tauri::command]
 #[specta::specta]
 pub fn list_favorites(state: State<'_, AppState>) -> AppResult<Vec<EntitySummary>> {
-    state.with_world(|w| entities::list_favorites(&w.conn))
+    state.with_world(|w| {
+        let mut items = entities::list_favorites(&w.conn)?;
+        gallery::attach_portraits(&w.conn, &w.path.join(world::ASSETS_DIR), &mut items)?;
+        Ok(items)
+    })
 }
 
 /// The most recently edited entities, newest first (`limit` 1 to 100).
@@ -76,5 +94,9 @@ pub fn list_favorites(state: State<'_, AppState>) -> AppResult<Vec<EntitySummary
 #[tauri::command]
 #[specta::specta]
 pub fn list_recent(state: State<'_, AppState>, limit: u32) -> AppResult<Vec<EntitySummary>> {
-    state.with_world(|w| entities::list_recent(&w.conn, limit))
+    state.with_world(|w| {
+        let mut items = entities::list_recent(&w.conn, limit)?;
+        gallery::attach_portraits(&w.conn, &w.path.join(world::ASSETS_DIR), &mut items)?;
+        Ok(items)
+    })
 }

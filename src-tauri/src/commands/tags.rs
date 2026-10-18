@@ -3,7 +3,7 @@ use tauri::State;
 use crate::error::AppResult;
 use crate::models::entity::EntitySummary;
 use crate::models::tag::Tag;
-use crate::services::tags;
+use crate::services::{gallery, tags, world};
 use crate::state::AppState;
 
 /// Every tag with its usage count, sorted by name.
@@ -63,5 +63,9 @@ pub fn list_entities_by_tag(
     names: Vec<String>,
     match_all: bool,
 ) -> AppResult<Vec<EntitySummary>> {
-    state.with_world(|w| tags::list_entities_by_tag(&w.conn, &names, match_all))
+    state.with_world(|w| {
+        let mut items = tags::list_entities_by_tag(&w.conn, &names, match_all)?;
+        gallery::attach_portraits(&w.conn, &w.path.join(world::ASSETS_DIR), &mut items)?;
+        Ok(items)
+    })
 }

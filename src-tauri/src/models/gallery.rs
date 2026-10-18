@@ -36,3 +36,11 @@ pub struct EntityImage {
     /// Absolute path of the thumbnail, `None` while it is being generated.
     pub thumb_path: Option<String>,
 }
+
+/// A portrait together with the entity it belongs to (`list_portraits`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct EntityPortrait {
+    pub entity_id: String,
+    pub portrait: Portrait,
+}

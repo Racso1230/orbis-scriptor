@@ -1,6 +1,8 @@
 //! Entity business rules: validation, IDs and timestamps. SQL lives in
 //! `db::entities`.
 
+use std::path::Path;
+
 use chrono::{SecondsFormat, Utc};
 use rusqlite::Connection;
 use serde_json::Value;
@@ -10,7 +12,7 @@ use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::models::entity::{Entity, EntityPatch, EntitySummary, NewEntity};
 use crate::models::map::MapBackground;
-use crate::services::{entity_types, events, maps, properties, search};
+use crate::services::{entity_types, events, gallery, maps, properties, search};
 
 /// UTC ISO-8601 with milliseconds and a `Z` suffix.
 fn now() -> String {
@@ -199,6 +201,17 @@ pub fn delete(conn: &Connection, id: &str) -> AppResult<()> {
     db::entities::delete(&tx, id)?;
     search::remove_entity(&tx, id)?;
     tx.commit()?;
+    Ok(())
+}
+
+/// Like [`delete`], and afterwards removes the gallery images' assets (row
+/// and files) that nothing else uses (see `services::gallery`).
+pub fn delete_with_assets(conn: &Connection, assets_dir: &Path, id: &str) -> AppResult<()> {
+    let asset_ids = db::gallery::asset_ids_for_entity(conn, id)?;
+    delete(conn, id)?;
+    for asset_id in asset_ids {
+        gallery::delete_asset_if_unused(conn, assets_dir, &asset_id)?;
+    }
     Ok(())
 }
 

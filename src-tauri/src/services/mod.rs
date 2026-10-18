@@ -12,6 +12,7 @@ pub mod entities;
 pub mod entity_types;
 pub mod events;
 pub mod export;
+pub mod gallery;
 pub mod graph;
 pub mod links;
 pub mod maps;

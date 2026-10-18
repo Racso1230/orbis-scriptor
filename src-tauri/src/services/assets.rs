@@ -105,6 +105,24 @@ pub fn copy_into_assets(source: &Path, assets_dir: &Path) -> AppResult<Asset> {
     ))
 }
 
+/// Deletes the image file, the thumbnail and any half-written thumbnail of
+/// an asset. Files that are already gone are fine; other failures are only
+/// logged (the database row is what matters, a leftover file is harmless).
+pub fn delete_files(assets_dir: &Path, id: &str, mime: &str) {
+    let candidates = [
+        asset_file(assets_dir, id, mime),
+        thumb_file(assets_dir, id),
+        assets_dir.join(format!("{id}.thumb.part")),
+    ];
+    for path in candidates {
+        if let Err(err) = fs::remove_file(&path)
+            && err.kind() != std::io::ErrorKind::NotFound
+        {
+            eprintln!("cannot delete {}: {err}", path.display());
+        }
+    }
+}
+
 /// Makes `<id>.thumb.png` (longest side <= 512px). Blocking; call it from a
 /// background thread.
 pub fn make_thumbnail(assets_dir: &Path, id: &str, mime: &str) -> AppResult<()> {

@@ -53,6 +53,7 @@ export const commands = {
 	entityTypes: () => typedError<EntityTypeDef[], AppError>(__TAURI_INVOKE("entity_types")),
 	/**  Lists entities of one type, or all of them when `entity_type` is null. */
 	listEntities: (entityType: string | null) => typedError<EntitySummary[], AppError>(__TAURI_INVOKE("list_entities", { entityType })),
+	/**  One entity with its tags, favourite flag and portrait. */
 	getEntity: (id: string) => typedError<Entity, AppError>(__TAURI_INVOKE("get_entity", { id })),
 	createEntity: (input: NewEntity) => typedError<Entity, AppError>(__TAURI_INVOKE("create_entity", { input })),
 	updateEntity: (id: string, patch: EntityPatch) => typedError<Entity, AppError>(__TAURI_INVOKE("update_entity", { id, patch })),
@@ -66,6 +67,40 @@ export const commands = {
 	 *  Entity edits, lore saves, event date changes and tag changes count.
 	 */
 	listRecent: (limit: number) => typedError<EntitySummary[], AppError>(__TAURI_INVOKE("list_recent", { limit })),
+	/**
+	 *  Imports an image file (png, jpg, webp or gif) and appends it to the
+	 *  entity's gallery. Like `import_asset`, the file is copied without the
+	 *  database lock and the thumbnail is made on a background thread, so
+	 *  `thumbPath` is usually `null` in the result (call `list_entity_images`
+	 *  again a moment later).
+	 */
+	addEntityImage: (entityId: string, path: string) => typedError<EntityImage, AppError>(__TAURI_INVOKE("add_entity_image", { entityId, path })),
+	/**
+	 *  Appends an asset that is already in the world (for example a map
+	 *  background) to the entity's gallery.
+	 */
+	addEntityImageFromAsset: (entityId: string, assetId: string) => typedError<EntityImage, AppError>(__TAURI_INVOKE("add_entity_image_from_asset", { entityId, assetId })),
+	/**
+	 *  The gallery of an entity in display order, each image with its file
+	 *  `path` and `thumbPath` (for `convertFileSrc`).
+	 */
+	listEntityImages: (entityId: string) => typedError<EntityImage[], AppError>(__TAURI_INVOKE("list_entity_images", { entityId })),
+	/**  Changes an image's caption (`null` clears it; at most 500 characters). */
+	updateEntityImage: (id: string, caption: string | null) => typedError<EntityImage, AppError>(__TAURI_INVOKE("update_entity_image", { id, caption })),
+	/**  Reorders the gallery: `ids` must list every image of the entity once. */
+	reorderEntityImages: (entityId: string, ids: string[]) => typedError<EntityImage[], AppError>(__TAURI_INVOKE("reorder_entity_images", { entityId, ids })),
+	/**
+	 *  Removes an image from its gallery. The image file is deleted too, but
+	 *  only when no other gallery image or map background uses the same asset.
+	 */
+	removeEntityImage: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("remove_entity_image", { id })),
+	/**
+	 *  Makes an image of the entity its portrait, or clears the portrait with
+	 *  `null`. Returns the gallery.
+	 */
+	setPortrait: (entityId: string, imageId: string | null) => typedError<EntityImage[], AppError>(__TAURI_INVOKE("set_portrait", { entityId, imageId })),
+	/**  Every portrait in the world, for avatars in the graph or on map pins. */
+	listPortraits: () => typedError<EntityPortrait[], AppError>(__TAURI_INVOKE("list_portraits")),
 	/**  Every tag with its usage count, sorted by name. */
 	listTags: () => typedError<Tag[], AppError>(__TAURI_INVOKE("list_tags")),
 	/**
@@ -495,11 +530,38 @@ export type EntityGraph = {
 	truncated: boolean,
 };
 
+/**  One gallery image of an entity. */
+export type EntityImage = {
+	id: string,
+	entityId: string,
+	assetId: string,
+	caption: string,
+	/**  Position in the gallery (0 first). */
+	sortOrder: number,
+	/**  True for the entity's portrait (at most one image per entity). */
+	isPortrait: boolean,
+	createdAt: string,
+	/**  Original file name of the asset, for display. */
+	fileName: string,
+	width: number | null,
+	height: number | null,
+	/**  Absolute path of the image file (not stored in the database). */
+	path: string,
+	/**  Absolute path of the thumbnail, `None` while it is being generated. */
+	thumbPath: string | null,
+};
+
 /**  Input for `update_entity`: only the fields that are `Some` change. */
 export type EntityPatch = {
 	name: string | null,
 	summary: string | null,
 	properties: { [key in string]: unknown } | null,
+};
+
+/**  A portrait together with the entity it belongs to (`list_portraits`). */
+export type EntityPortrait = {
+	entityId: string,
+	portrait: Portrait,
 };
 
 /**  The light version used by the sidebar list. */
