@@ -268,7 +268,7 @@ fn generate_field_key(label: &str, used: &HashSet<String>) -> String {
 ///
 /// - `reserved`: keys that are not allowed (the built-in fields of the type).
 /// - `known_types`: keys an entity-reference field may point at.
-fn normalize_fields(
+pub(crate) fn normalize_fields(
     inputs: Vec<FieldInput>,
     reserved: &HashSet<String>,
     known_types: &HashSet<String>,
@@ -393,11 +393,11 @@ fn normalize_kind(
     }
 }
 
-fn known_type_keys(all: &[EntityTypeDef]) -> HashSet<String> {
+pub(crate) fn known_type_keys(all: &[EntityTypeDef]) -> HashSet<String> {
     all.iter().map(|t| t.key.clone()).collect()
 }
 
-fn builtin_field_keys(type_key: &str) -> HashSet<String> {
+pub(crate) fn builtin_field_keys(type_key: &str) -> HashSet<String> {
     entity_type::all()
         .into_iter()
         .find(|t| t.key == type_key)
@@ -428,6 +428,31 @@ fn resync_type(conn: &Connection, type_key: &str) -> AppResult<()> {
 /// Creates a custom type. The key is generated from the label
 /// (`custom-<slug>`) and never changes afterwards.
 pub fn create(
+    conn: &Connection,
+    label: &str,
+    plural: &str,
+    icon: &str,
+    color: &str,
+    fields: Vec<FieldInput>,
+) -> AppResult<EntityTypeDef> {
+    let def = prepare_new(conn, label, plural, icon, color, fields)?;
+    let tx = conn.unchecked_transaction()?;
+    let order = db::entity_types::next_sort_order(&tx)?;
+    db::entity_types::insert_custom(&tx, &def, order, &now())?;
+    tx.commit()?;
+    Ok(def)
+}
+
+/// Writes an already validated custom type WITHOUT its own transaction
+/// (the Markdown import creates types inside its one big transaction).
+pub fn insert_prepared(conn: &Connection, def: &EntityTypeDef) -> AppResult<()> {
+    let order = db::entity_types::next_sort_order(conn)?;
+    db::entity_types::insert_custom(conn, def, order, &now())
+}
+
+/// Validates the input of a new custom type and builds it (including its
+/// generated key) without writing anything. [`create`] and the import use it.
+pub fn prepare_new(
     conn: &Connection,
     label: &str,
     plural: &str,
@@ -467,7 +492,7 @@ pub fn create(
         n += 1;
     }
 
-    let def = EntityTypeDef {
+    Ok(EntityTypeDef {
         key,
         label,
         plural,
@@ -475,12 +500,7 @@ pub fn create(
         color,
         builtin: false,
         fields,
-    };
-    let tx = conn.unchecked_transaction()?;
-    let order = db::entity_types::next_sort_order(&tx)?;
-    db::entity_types::insert_custom(&tx, &def, order, &now())?;
-    tx.commit()?;
-    Ok(def)
+    })
 }
 
 /// Edits a custom type; only the `Some` arguments change. When `fields` is

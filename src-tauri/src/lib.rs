@@ -85,6 +85,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::maps::apply_map_ops,
             commands::export::save_export,
             commands::export::export_markdown,
+            commands::import::preview_import,
+            commands::import::import_vault,
             commands::calendars::get_default_calendar,
             commands::calendars::list_calendars,
             commands::calendars::format_day,
@@ -123,6 +125,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
         .events(collect_events![
             models::export::ExportProgress,
             models::export::ExportFinished,
+            models::import::ImportProgress,
+            models::import::ImportFinished,
         ])
 }
 

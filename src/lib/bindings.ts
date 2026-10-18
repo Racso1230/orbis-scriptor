@@ -231,6 +231,24 @@ export const commands = {
 	 *  or the error text.
 	 */
 	exportMarkdown: (targetDir: string, options: MarkdownExportOptions) => typedError<string, AppError>(__TAURI_INVOKE("export_markdown", { targetDir, options })),
+	/**
+	 *  Reports what importing a vault folder would do, without changing the
+	 *  world: notes per type (and which types would be created), folders that
+	 *  matched no type, images, tags, relationships and the first warnings.
+	 * 
+	 *  Reading a big vault takes a moment, so this is an `async` command: the
+	 *  work runs on a worker thread and the window stays responsive.
+	 */
+	previewImport: (vaultDir: string, options: ImportOptions) => typedError<ImportPreview, AppError>(__TAURI_INVOKE("preview_import", { vaultDir, options })),
+	/**
+	 *  Starts importing a Markdown / Obsidian vault into the open world and
+	 *  returns a job id at once. The work runs on a background thread inside ONE
+	 *  database transaction (all or nothing) and reports through two events
+	 *  (see `models::import`): `import-progress` (`ImportProgress`) while it
+	 *  runs and `import-finished` (`ImportFinished`) once, with the counts and
+	 *  warnings or the error text. Refuses to start while another import runs.
+	 */
+	importVault: (vaultDir: string, options: ImportOptions) => typedError<string, AppError>(__TAURI_INVOKE("import_vault", { vaultDir, options })),
 	/**  The world's default calendar. */
 	getDefaultCalendar: () => typedError<Calendar, AppError>(__TAURI_INVOKE("get_default_calendar")),
 	listCalendars: () => typedError<Calendar[], AppError>(__TAURI_INVOKE("list_calendars")),
@@ -339,6 +357,8 @@ export const commands = {
 export const events = {
 	exportFinished: makeEvent<ExportFinished>("export-finished"),
 	exportProgress: makeEvent<ExportProgress>("export-progress"),
+	importFinished: makeEvent<ImportFinished>("import-finished"),
+	importProgress: makeEvent<ImportProgress>("import-progress"),
 };
 
 /* Types */
@@ -715,6 +735,20 @@ export type FieldKind = "text" | "number" | "select" | "longText" | "boolean" | 
 	multiple: boolean,
 } } | "multiSelect" | "url";
 
+/**
+ *  What notes from one folder become. Set exactly one of `typeKey` (an
+ *  existing type) and `createCustom` (a new custom type).
+ */
+export type FolderTypeMapping = {
+	/**
+	 *  The folder NAME (not the whole path), as listed in
+	 *  `ImportPreview.unresolvedTypes`.
+	 */
+	folder: string,
+	typeKey: string | null,
+	createCustom: NewTypeSpec | null,
+};
+
 export type GraphEdge = {
 	/**  The `links` row id. */
 	id: string,
@@ -746,6 +780,83 @@ export type GraphNode = {
 	type: string,
 	/**  Distance from the focus node (0 = the focus itself). */
 	degree: number,
+};
+
+/**  Sent once as the event `import-finished`, after success or failure. */
+export type ImportFinished = {
+	jobId: string,
+	ok: boolean,
+	/**
+	 *  Entities created (notes plus placeholder notes). 0 on failure: a
+	 *  failed import changes nothing.
+	 */
+	created: number,
+	skipped: number,
+	images: number,
+	relationships: number,
+	/**  Custom types the import created. */
+	typesCreated: number,
+	/**  The first problems found (at most 100). */
+	warnings: string[],
+	moreWarnings: number,
+	/**  The error message on failure. */
+	error: string | null,
+};
+
+/**  Options for `preview_import` and `import_vault`. */
+export type ImportOptions = {
+	/**  Type for notes whose type cannot be worked out (for example `note`). */
+	defaultType: string,
+	/**  Where notes of folders that match no type should go. */
+	folderTypeMap: FolderTypeMapping[],
+	/**
+	 *  A `[[link]]` to a note that is not in the vault becomes an empty Note
+	 *  entity (instead of plain text).
+	 */
+	createMissingLinksAsNotes: boolean,
+	/**
+	 *  Import images as gallery images (otherwise a `[file.png]` placeholder
+	 *  is left in the text).
+	 */
+	importImages: boolean,
+	/**
+	 *  Skip a note when the world already has an entity of the same type
+	 *  with the same name (ignoring case). Links to it still work. When
+	 *  false, every note creates a new entity.
+	 */
+	skipDuplicates: boolean,
+};
+
+/**  What an import would do, computed without writing anything. */
+export type ImportPreview = {
+	/**  Notes that will become entities (after limits and skipped duplicates). */
+	notes: number,
+	byType: TypeCount[],
+	unresolvedTypes: UnmappedFolder[],
+	/**  Distinct image files that notes embed and that can be imported. */
+	images: number,
+	/**  Distinct tags (front matter and inline `#tags`). */
+	tags: number,
+	/**  Notes skipped because the world already has them (`skipDuplicates`). */
+	skipped: number,
+	/**  Relationships found in an Orbis export (`## Relationships` sections). */
+	relationships: number,
+	/**  True when the folder is an Orbis Scriptor Markdown export. */
+	orbisExport: boolean,
+	/**  The first problems found (at most 50), in plain words. */
+	warnings: string[],
+	/**  How many warnings were left out of the list. */
+	moreWarnings: number,
+};
+
+/**  Progress of a running import. Sent as the event `import-progress`. */
+export type ImportProgress = {
+	/**  The id returned by `import_vault`. */
+	jobId: string,
+	done: number,
+	total: number,
+	/**  `scanning`, `reading`, `converting`, `writing` or `finishing`. */
+	phase: string,
 };
 
 /**
@@ -962,6 +1073,16 @@ export type NewMapObject = {
 	createdAt?: string | null,
 };
 
+/**  A custom type the import should create for a folder. */
+export type NewTypeSpec = {
+	label: string,
+	plural: string,
+	/**  An icon name from `list_type_icons`. */
+	icon: string,
+	/**  `#rrggbb`; empty means the default colour. */
+	color: string,
+};
+
 /**
  *  A point in map pixels (origin top-left). `#[specta(type = Number)]`
  *  makes the generated TypeScript say `number` instead of `number | null`
@@ -1088,6 +1209,24 @@ export type Tag = {
 
 /**  Colour scheme preference. Serialised as `"light"`, `"dark"` or `"system"`. */
 export type Theme = "light" | "dark" | "system";
+
+/**  How many notes will become entities of one type. */
+export type TypeCount = {
+	typeKey: string,
+	label: string,
+	count: number,
+	/**  True when the type does not exist yet and the import creates it. */
+	newType: boolean,
+};
+
+/**
+ *  A folder whose notes matched no type (they use the default type unless
+ *  the folder is mapped in `ImportOptions.folderTypeMap`).
+ */
+export type UnmappedFolder = {
+	folder: string,
+	count: number,
+};
 
 /**  One problem found in a calendar definition, tied to a form field. */
 export type ValidationIssue = {

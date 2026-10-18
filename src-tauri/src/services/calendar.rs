@@ -489,6 +489,60 @@ pub fn format(def: &CalendarDefinition, day: i64, style: DateStyle) -> AppResult
     })
 }
 
+/// Reads a date written the way [`format`] writes it, so dates in an
+/// exported note can be turned back into day numbers: `Full`
+/// ("15 Month 3, 1203 AF") or `Short` ("15/3/1203 AF"). The era label may be
+/// its abbreviation or its name (any case); without one the first era is
+/// used. Returns `None` for anything that is not a valid date of `def`.
+pub fn parse_date(def: &CalendarDefinition, text: &str) -> Option<i64> {
+    let text = text.trim();
+    let (first, rest) = text.split_once(char::is_whitespace).unwrap_or((text, ""));
+    let (day, month, year, era_text): (u32, u32, i64, &str) = if first.contains('/') {
+        // Short: d/m/y then the era label.
+        let mut parts = first.split('/');
+        let day = parts.next()?.parse().ok()?;
+        let month = parts.next()?.parse().ok()?;
+        let year = parts.next()?.parse().ok()?;
+        if parts.next().is_some() {
+            return None;
+        }
+        (day, month, year, rest.trim())
+    } else {
+        // Full: day, month name, comma, year, era label.
+        let day: u32 = first.parse().ok()?;
+        let rest = rest.trim_start();
+        let lower = rest.to_lowercase();
+        // The longest month name that starts the text ("Month 12" before "Month 1").
+        let (month_pos, month_len) = def
+            .months
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| lower.starts_with(&m.name.to_lowercase()))
+            .map(|(i, m)| (i, m.name.len()))
+            .max_by_key(|(_, len)| *len)?;
+        let after = rest.get(month_len..)?.trim_start_matches([',', ' ']);
+        let (year_text, era_text) = after.split_once(char::is_whitespace).unwrap_or((after, ""));
+        (
+            day,
+            month_pos as u32 + 1,
+            year_text.parse().ok()?,
+            era_text.trim(),
+        )
+    };
+    let era_index = if era_text.is_empty() {
+        0
+    } else {
+        let wanted = era_text.to_lowercase();
+        def.eras.iter().position(|e| {
+            e.name.to_lowercase() == wanted
+                || e.abbreviation
+                    .as_deref()
+                    .is_some_and(|a| !a.is_empty() && a.to_lowercase() == wanted)
+        })? as u32
+    };
+    from_date(def, era_index, year, month, day).ok()
+}
+
 // ---- Service functions that load calendars from the database ----
 
 pub fn get_default(conn: &Connection) -> AppResult<Calendar> {
@@ -1211,6 +1265,51 @@ mod tests {
         }
         out.push_str("  ]\n}\n");
         out
+    }
+
+    #[test]
+    fn parse_date_reads_what_format_writes() {
+        for def in [standard(), gregorian(0), moons()] {
+            for day in (-200_000..200_000)
+                .step_by(997)
+                .chain([-250, -251, 0, 59, 60])
+            {
+                for style in [DateStyle::Full, DateStyle::Short] {
+                    let text = format(&def, day, style).unwrap();
+                    assert_eq!(parse_date(&def, &text), Some(day), "{text}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn parse_date_is_forgiving_but_strict_about_nonsense() {
+        let def = standard();
+        let day = from_date(&def, 0, 1203, 3, 15).unwrap();
+        for text in [
+            "15 Month 3, 1203 AF",
+            "  15 month 3, 1203 af ",
+            "15 Month 3 1203 Age of Founding",
+            "15 Month 3, 1203",
+            "15/3/1203 AF",
+        ] {
+            assert_eq!(parse_date(&def, text), Some(day), "{text}");
+        }
+        // "Month 12" must not be read as "Month 1" followed by "2".
+        let twelve = from_date(&def, 0, 5, 12, 1).unwrap();
+        assert_eq!(parse_date(&def, "1 Month 12, 5 AF"), Some(twelve));
+        for bad in [
+            "",
+            "soon",
+            "2024-05-17",
+            "31 Month 3, 1203 AF",
+            "15 Nowhere, 1203 AF",
+            "15 Month 3, 1203 XX",
+            "0 Month 3, 1203 AF",
+            "1/2/3/4 AF",
+        ] {
+            assert_eq!(parse_date(&def, bad), None, "{bad:?}");
+        }
     }
 
     /// Regenerates `src/features/timeline/calendar-fixtures.json` (like the

@@ -152,6 +152,22 @@ pub fn spawn_thumbnail(assets_dir: PathBuf, id: String, mime: String) {
     });
 }
 
+/// Makes the thumbnails of many assets on ONE background thread, one after
+/// the other (an import of hundreds of images must not start hundreds of
+/// threads). `items` are `(asset id, mime type)` pairs.
+pub fn spawn_thumbnails(assets_dir: PathBuf, items: Vec<(String, String)>) {
+    if items.is_empty() {
+        return;
+    }
+    thread::spawn(move || {
+        for (id, mime) in items {
+            if let Err(err) = make_thumbnail(&assets_dir, &id, &mime) {
+                eprintln!("thumbnail for asset {id} failed: {err}");
+            }
+        }
+    });
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {

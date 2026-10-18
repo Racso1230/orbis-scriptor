@@ -28,12 +28,13 @@
 //! working, and the export sees one consistent snapshot of the world. This is
 //! the same approach as `services::backups`.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
 use rusqlite::{Connection, OpenFlags};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -57,6 +58,43 @@ pub const INDEX_FILE: &str = "README.md";
 pub const GALLERY_HEADING: &str = "Gallery";
 /// Longest file name stem we write (in characters).
 const MAX_STEM_CHARS: usize = 100;
+
+/// The content of the `.orbis-export` marker file. Besides marking the folder
+/// as an export it records the world's custom types and extra fields, so
+/// importing the folder into a new world can recreate them (the notes only
+/// carry field VALUES).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ExportManifest {
+    pub app: String,
+    pub format_version: u32,
+    /// The world's custom types, with all of their fields.
+    pub custom_types: Vec<EntityTypeDef>,
+    /// Extra user fields on built-in types, by type key.
+    pub templates: BTreeMap<String, Vec<FieldDef>>,
+}
+
+/// Version written to `ExportManifest.format_version`.
+pub const MANIFEST_VERSION: u32 = 1;
+
+fn manifest_of(types: &[EntityTypeDef]) -> ExportManifest {
+    let mut manifest = ExportManifest {
+        app: "orbis-scriptor".into(),
+        format_version: MANIFEST_VERSION,
+        ..Default::default()
+    };
+    for t in types {
+        if t.builtin {
+            let extra: Vec<FieldDef> = t.fields.iter().filter(|f| f.custom).cloned().collect();
+            if !extra.is_empty() {
+                manifest.templates.insert(t.key.clone(), extra);
+            }
+        } else {
+            manifest.custom_types.push(t.clone());
+        }
+    }
+    manifest
+}
 
 /// What an export produced.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -315,7 +353,7 @@ impl Front {
 
 /// Front matter keys the export writes itself; a field with one of these keys
 /// is written as `field_<key>` instead.
-const RESERVED_KEYS: [&str; 16] = [
+pub const RESERVED_KEYS: [&str; 16] = [
     "id",
     "type",
     "type_key",
@@ -772,7 +810,13 @@ fn write_all(
     let mut files = 0u32;
     let mut copied: HashSet<String> = HashSet::new();
 
-    fs::write(out.join(MARKER_FILE), "{}\n")?;
+    fs::write(
+        out.join(MARKER_FILE),
+        format!(
+            "{}\n",
+            serde_json::to_string_pretty(&manifest_of(&plan.types))?
+        ),
+    )?;
     for entry in plan.entries.iter().filter(|e| e.included) {
         let (text, copies) = render_note(&ctx, entry)?;
         let dir = out.join(&entry.folder);
