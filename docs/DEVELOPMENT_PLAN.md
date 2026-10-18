@@ -307,20 +307,22 @@ CREATE INDEX idx_events_start ON events(start_day);
 
 ### Phase 12 — Templates and export (v0.3)
 
-- [ ] User-defined entity types and field templates
+- [x] User-defined entity types and field templates
   - Custom types: label, plural, icon (curated lucide allow-list) and colour (`#RRGGBB`, used for pins and graph nodes); key `custom-<slug>`, immutable once created; at most 50 custom types, labels unique (case-insensitive) across all types
   - Field templates: built-in types keep their fixed fields and can gain extra user fields; custom types own all of theirs (at most 40 per type, keys `[a-z][a-z0-9_]{0,39}` unique per type and never colliding with built-in field keys)
   - Field kinds: text, long text, number, boolean, select, multi-select, date (in-world day number, shown with the display calendar), entity reference (one or many, optionally limited to some types) and URL
   - Removing a field or changing its kind never destroys stored values; unknown keys in an entity's properties are kept but not validated; deleting a type needs a "move entities to" target when entities of that type exist
   - Entity-reference values also create `field_ref` links, so backlinks and the graph (opt-in edge kind) see them
-- [ ] Export world to Markdown folder (Obsidian-compatible links)
+- [x] Export world to Markdown folder (Obsidian-compatible links)
   - One folder per type, one `.md` per entity with YAML frontmatter (fields, dates, `[[links]]`), the lore converted from TipTap JSON to Markdown, a Relationships section, and an index `README.md`
   - Links use the final unique file name (`[[File|Display name]]`); map background images are copied to `assets/` and embedded
   - Runs on a background thread with progress events; written to a temporary folder and renamed at the end, so a failed export leaves nothing half-written
-- [ ] Export an entity or the whole world to PDF
+- [x] Export an entity or the whole world to PDF
   - Print-friendly HTML view of an entity (or of the whole world) printed through the webview's print dialog ("Save as PDF"); no Rust PDF engine
 
-**Backend status:** the Phase 12 Rust backend is done: migration 011 (`custom_entity_types`, `type_templates`); `entity_types` now returns the merged list (built-ins with `builtin`/`color`, extra user fields flagged `custom`, then custom types) and can fail; commands `list_type_icons`, `create_entity_type`, `update_entity_type`, `delete_entity_type` (with `reassignTo`), `set_type_template_fields`, `reorder_entity_types`; field kinds longText, boolean, date, entityRef, multiSelect and url with per-kind validation of changed values (unknown keys are kept); entity-reference fields mirrored as `field_ref` links (opt-in graph edge kind); TipTap to Markdown converter; `export_markdown` on a background thread with typed `export-progress` / `export-finished` events; a "Deity" custom type with two deities in the sample world. PDF export needs no backend (print-friendly view in the frontend). Still to do: the type and template editor, the dynamic fields form, the export dialogs and the print view.
+**Backend status:** the Phase 12 Rust backend is done: migration 011 (`custom_entity_types`, `type_templates`); `entity_types` now returns the merged list (built-ins with `builtin`/`color`, extra user fields flagged `custom`, then custom types) and can fail; commands `list_type_icons`, `create_entity_type`, `update_entity_type`, `delete_entity_type` (with `reassignTo`), `set_type_template_fields`, `reorder_entity_types`; field kinds longText, boolean, date, entityRef, multiSelect and url with per-kind validation of changed values (unknown keys are kept); entity-reference fields mirrored as `field_ref` links (opt-in graph edge kind); TipTap to Markdown converter; `export_markdown` on a background thread with typed `export-progress` / `export-finished` events; a "Deity" custom type with two deities in the sample world. PDF export needs no backend (print-friendly view in the frontend).
+
+**Frontend status (done):** an Entity types screen (`/world/types`, from the gear menu, the palette and "Manage types…" in the sidebar) with a type and field editor, reorder and delete-with-move; inputs for every field kind (dates in the display calendar, entity references as chips with a picker); every allow-listed icon and the type colour used in the sidebar, pins and graph; a `field_ref` toggle in the graph filters; an "Export to Markdown…" dialog with progress that keeps running when closed; and print views (`/print/entity/$id`, `/print/world`, outside the app shell) that open the system print dialog ("Save as PDF").
 
 **Tests:** migration 011 on an existing database; merged type list; type and field validation (label uniqueness, key collisions, icon and colour, limits); property validation per field kind; `field_ref` link sync; type delete and reassign; TipTap to Markdown converter for every node and mark, escaping and mentions; file name sanitising, collisions and Windows reserved names; full export of the sample world (files, frontmatter, links resolve, assets copied, no temporary folder left, overwrite refusal); Vitest for the field form and type editor; Playwright flow for creating a type and exporting.
 
