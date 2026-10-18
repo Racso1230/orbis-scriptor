@@ -15,6 +15,7 @@ pub mod export;
 pub mod graph;
 pub mod links;
 pub mod maps;
+pub mod markdown;
 pub mod properties;
 pub mod recent_worlds;
 pub mod relationships;
