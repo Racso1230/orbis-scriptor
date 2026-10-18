@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useRouterState } from "@tanstack/react-router";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { CalendarDays, ChevronDown, ChevronRight, Plus, Search } from "lucide-react";
+import { CalendarDays, ChevronDown, ChevronRight, Network, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCurrentWorld } from "@/features/worlds/queries";
@@ -23,6 +23,7 @@ export function EntitySidebar() {
   const createEntity = useCreateEntity();
   const openTab = useTabsStore((s) => s.openTab);
   const onTimeline = useRouterState({ select: (s) => s.location.pathname.endsWith("/timeline") });
+  const onGraph = useRouterState({ select: (s) => s.location.pathname.endsWith("/graph") });
 
   const [filter, setFilter] = useState("");
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
@@ -63,7 +64,7 @@ export function EntitySidebar() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="px-2 pt-2">
+      <div className="flex flex-col gap-1 px-2 pt-2">
         <Button
           variant={onTimeline ? "secondary" : "ghost"}
           size="sm"
@@ -72,6 +73,15 @@ export function EntitySidebar() {
           onClick={() => void navigate({ to: "/world/timeline" })}
         >
           <CalendarDays /> Timeline
+        </Button>
+        <Button
+          variant={onGraph ? "secondary" : "ghost"}
+          size="sm"
+          className="w-full justify-start"
+          aria-current={onGraph ? "page" : undefined}
+          onClick={() => void navigate({ to: "/world/graph" })}
+        >
+          <Network /> Graph
         </Button>
       </div>
 

@@ -51,6 +51,9 @@ export function toFlowEdges(edges: GraphEdge[], opts: EdgeOptions): Edge[] {
       id: e.id,
       source: e.source,
       target: e.target,
+      // Left-to-right layout: leave a node on its right side, enter on its left.
+      sourceHandle: "r",
+      targetHandle: "l",
       label: opts.showLabels || hovered ? e.label : undefined,
       type: "default",
       markerEnd: e.symmetric ? undefined : { type: MarkerType.ArrowClosed, color },
