@@ -204,4 +204,19 @@ mod tests {
         assert!(crate::services::calendar::validate(&calendar.definition).is_ok());
         assert_eq!(crate::db::calendars::list(&conn).unwrap().len(), 1);
     }
+
+    #[test]
+    fn migration_008_adds_the_kind_index() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        MIGRATIONS.to_version(&mut conn, 7).unwrap();
+        MIGRATIONS.to_latest(&mut conn).unwrap();
+        let has_index: bool = conn
+            .query_row(
+                "SELECT count(*) > 0 FROM sqlite_master WHERE name = 'idx_links_kind'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(has_index);
+    }
 }

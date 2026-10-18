@@ -307,6 +307,29 @@ mod tests {
     }
 
     #[test]
+    fn seeds_valid_relationships() {
+        let mut c = Connection::open_in_memory().unwrap();
+        c.pragma_update(None, "foreign_keys", "ON").unwrap();
+        MIGRATIONS.to_latest(&mut c).unwrap();
+        seed(&c, 150).unwrap();
+
+        let made = seed_relationships(&c, 300).unwrap();
+        assert!(made > 200, "created only {made}");
+        let rows: i64 = c
+            .query_row(
+                "SELECT count(*) FROM links WHERE kind NOT IN ('mention', 'involved_in')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(rows, i64::from(made));
+        // In a world without entities there is nothing to link.
+        let mut empty = Connection::open_in_memory().unwrap();
+        MIGRATIONS.to_latest(&mut empty).unwrap();
+        assert_eq!(seed_relationships(&empty, 10).unwrap(), 0);
+    }
+
+    #[test]
     fn seeds_map_pins() {
         use crate::models::entity::NewEntity;
         use crate::services::entities;
