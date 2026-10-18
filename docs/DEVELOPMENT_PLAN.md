@@ -350,6 +350,8 @@ CREATE INDEX idx_events_start ON events(start_day);
   - **Tests:** add/reorder/caption/remove, portrait set and clear (at most one), asset reference counting, cascade on entity delete, export with images
   - **Acceptance:** set a portrait and add gallery images to a character, reorder them, remove one, and see the portrait in the sidebar
 
+**Backend status (done):** migration 012 (`tags`, `entity_tags`, `entities.favorite`, `entity_images`, search index recreated with a `tags` column); commands `list_tags`, `set_entity_tags`, `rename_tag` (merges), `delete_tag`, `set_tag_color`, `list_entities_by_tag`, `set_favorite`, `list_favorites`, `list_recent`, gallery commands (`add_entity_image`, `add_entity_image_from_asset`, `list_entity_images`, `update_entity_image`, `reorder_entity_images`, `remove_entity_image`, `set_portrait`, `list_portraits`), `preview_import` and `import_vault` with `import-progress` / `import-finished` events; `tag:` search filter; entity summaries carry `favorite`, `tags` and `portrait`; Markdown export writes tags, gallery and a manifest of custom types in `.orbis-export`; the sample world has tags, a favourite and a generated portrait. The UI items above are not ticked: they wait for the frontend.
+
 ### Later
 
 - Optional sync/collaboration (Yjs-based), plugin system, procedural map generation

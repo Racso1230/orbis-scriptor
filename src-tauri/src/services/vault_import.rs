@@ -1619,6 +1619,19 @@ fn convert_all(
         }
     }
 
+    // Links to notes that are not in the vault: one warning with examples.
+    let mut missing: BTreeSet<String> = BTreeSet::new();
+    for r in &results {
+        missing.extend(r.unresolved.iter().map(|n| n.to_lowercase()));
+    }
+    if !missing.is_empty() {
+        let shown: Vec<&str> = missing.iter().take(5).map(String::as_str).collect();
+        plan.warnings.push(format!(
+            "{} link target(s) are not notes of the vault (for example {}); they stay as plain text",
+            missing.len(),
+            shown.join(", ")
+        ));
+    }
     for (note, r) in plan.notes.iter().zip(&results) {
         for w in &r.warnings {
             plan.warnings.push(format!("{}: {w}", note.vault.rel));
@@ -2208,7 +2221,8 @@ mod tests {
         assert_eq!(folders, vec!["Cities", "Random"]);
         assert_eq!(p.images, 2);
         assert_eq!(p.tags, 3, "royalty, coast and places/cities");
-        assert!(p.warnings.is_empty(), "{:?}", p.warnings);
+        assert_eq!(p.warnings.len(), 1, "{:?}", p.warnings);
+        assert!(p.warnings[0].contains("missing note"), "{:?}", p.warnings);
         assert_eq!(counts(&w.conn), before, "a preview writes nothing");
 
         // Mapping a folder removes it from the unresolved list.
