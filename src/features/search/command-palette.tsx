@@ -8,6 +8,7 @@ import {
   Network,
   Plus,
   RefreshCw,
+  Shapes,
   Settings,
   X,
 } from "lucide-react";
@@ -124,6 +125,15 @@ export function CommandPalette() {
       run: () => {
         changeOpen(false);
         void navigate({ to: "/world/calendars" });
+      },
+    },
+    {
+      id: "entity-types",
+      label: "Entity types",
+      icon: <Shapes />,
+      run: () => {
+        changeOpen(false);
+        void navigate({ to: "/world/types" });
       },
     },
     {

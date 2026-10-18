@@ -1,7 +1,15 @@
 import { useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useRouterState } from "@tanstack/react-router";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { CalendarDays, ChevronDown, ChevronRight, Network, Plus, Search } from "lucide-react";
+import {
+  CalendarDays,
+  ChevronDown,
+  ChevronRight,
+  Network,
+  Plus,
+  Search,
+  Shapes,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCurrentWorld } from "@/features/worlds/queries";
@@ -166,6 +174,14 @@ export function EntitySidebar() {
             );
           })}
         </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="mt-2 w-full justify-start text-muted-foreground"
+          onClick={() => void navigate({ to: "/world/types" })}
+        >
+          <Shapes /> Manage types…
+        </Button>
         {entities.data?.length === 0 && (
           <p className="px-2 py-4 text-sm text-muted-foreground">
             No entities yet. Use the + next to a type, or press Ctrl+N.

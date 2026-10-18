@@ -10,6 +10,7 @@ import { EntityPage } from "@/features/entities/entity-page";
 import { currentWorldQuery } from "@/features/worlds/queries";
 import { GraphPage } from "@/features/relationships/graph-view";
 import { CalendarsPage } from "@/features/calendars/calendars-page";
+import { TypesPage } from "@/features/types/types-page";
 import { TimelinePage } from "@/features/timeline/timeline-view";
 import { SettingsPage } from "@/features/settings/settings-page";
 import { WelcomePage } from "@/features/worlds/welcome-page";
@@ -68,6 +69,13 @@ const calendarsRoute = createRoute({
   component: CalendarsPage,
 });
 
+// `/world/types` - entity types and field templates.
+const typesRoute = createRoute({
+  getParentRoute: () => worldRoute,
+  path: "/types",
+  component: TypesPage,
+});
+
 // `/world/graph` - relationship graph and family tree (focus lives in a store).
 const graphRoute = createRoute({
   getParentRoute: () => worldRoute,
@@ -85,7 +93,14 @@ const settingsRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   settingsRoute,
-  worldRoute.addChildren([worldIndexRoute, entityRoute, timelineRoute, calendarsRoute, graphRoute]),
+  worldRoute.addChildren([
+    worldIndexRoute,
+    entityRoute,
+    timelineRoute,
+    calendarsRoute,
+    typesRoute,
+    graphRoute,
+  ]),
 ]);
 
 // Hash history keeps URLs working both in `tauri dev` and in the packaged app,
