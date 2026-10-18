@@ -1076,4 +1076,161 @@ mod tests {
         assert_eq!(def.epoch_offset, 0);
         assert!(def.leap.is_none());
     }
+
+    // ---- Shared golden fixtures for the TypeScript port ----
+
+    /// 13 months of 28 days, a leap day every 4 years except every 100, two
+    /// eras (one before the epoch), no weekdays, shifted epoch.
+    fn moons() -> CalendarDefinition {
+        CalendarDefinition {
+            months: (1..=13).map(|i| month(&format!("Moon {i}"), 28)).collect(),
+            weekdays: vec![],
+            eras: vec![
+                Era {
+                    name: "Before the Reckoning".into(),
+                    abbreviation: Some("BR".into()),
+                    start_day: -100_000,
+                },
+                Era {
+                    name: "Reckoning".into(),
+                    abbreviation: None,
+                    start_day: -250,
+                },
+            ],
+            epoch_offset: -250,
+            leap: Some(LeapRule {
+                month_index: 12,
+                extra_days: 1,
+                rules: vec![cycle(4, true), cycle(100, false)],
+            }),
+        }
+    }
+
+    const STYLES: [(&str, DateStyle); 6] = [
+        ("full", DateStyle::Full),
+        ("short", DateStyle::Short),
+        ("monthYear", DateStyle::MonthYear),
+        ("year", DateStyle::Year),
+        ("month", DateStyle::Month),
+        ("day", DateStyle::Day),
+    ];
+
+    /// Days worth checking: fixed spot values plus, for a range of years,
+    /// the days around year starts, ends and the leap month.
+    fn fixture_days(def: &CalendarDefinition) -> Vec<i64> {
+        let mut days: Vec<i64> = vec![
+            0,
+            1,
+            -1,
+            29,
+            30,
+            359,
+            360,
+            -360,
+            -361,
+            365,
+            366,
+            -365,
+            -366,
+            1_000,
+            -1_000,
+            99_999,
+            -99_999,
+            1_000_000,
+            -1_000_000,
+            1_000_000_000,
+            -1_000_000_000,
+            1_234_567_891,
+            -1_234_567_891,
+            999_999_999_999,
+            -999_999_999_999,
+            MAX_DAY,
+            -MAX_DAY,
+        ];
+        for year in [
+            -401, -400, -100, -5, -4, -1, 0, 1, 2, 3, 4, 5, 99, 100, 101, 399, 400, 401, 2023,
+            2024, 2100,
+        ] {
+            let Ok(start) = from_date(def, 0, year, 1, 1) else {
+                continue;
+            };
+            let (_, len) = year_info(def, start).unwrap();
+            days.extend([start - 1, start, start + 1, start + len - 1, start + len]);
+            if let Some(leap) = &def.leap {
+                let m = leap.month_index + 1;
+                let m_len = days_in_month(def, 0, year, m).unwrap();
+                if let Ok(last) = from_date(def, 0, year, m, m_len) {
+                    days.extend([last - 1, last, last + 1]);
+                }
+            }
+        }
+        days.retain(|d| check_day(*d).is_ok());
+        days.sort_unstable();
+        days.dedup();
+        days
+    }
+
+    fn fixtures_json() -> String {
+        let calendars = [
+            ("default", standard()),
+            ("gregorian", gregorian(1_000)),
+            ("moons", moons()),
+            ("uneven", odd()),
+        ];
+        let mut out = String::from("{\n  \"calendars\": [\n");
+        for (ci, (name, def)) in calendars.iter().enumerate() {
+            out.push_str(&format!(
+                "    {{\n      \"name\": {},\n      \"definition\": {},\n      \"samples\": [\n",
+                serde_json::to_string(name).unwrap(),
+                serde_json::to_string(def).unwrap()
+            ));
+            let days = fixture_days(def);
+            for (di, &day) in days.iter().enumerate() {
+                let date = to_date(def, day).unwrap();
+                let mut formats = serde_json::Map::new();
+                for (key, style) in STYLES {
+                    formats.insert(key.into(), format(def, day, style).unwrap().into());
+                }
+                let sample = serde_json::json!({
+                    "day": day,
+                    "date": date,
+                    "formats": formats,
+                    "daysInYear": year_info(def, day).unwrap().1,
+                    "daysInMonth": days_in_month(def, date.era_index, date.year, date.month).unwrap(),
+                });
+                out.push_str("        ");
+                out.push_str(&serde_json::to_string(&sample).unwrap());
+                out.push_str(if di + 1 < days.len() { ",\n" } else { "\n" });
+            }
+            out.push_str("      ]\n    }");
+            out.push_str(if ci + 1 < calendars.len() {
+                ",\n"
+            } else {
+                "\n"
+            });
+        }
+        out.push_str("  ]\n}\n");
+        out
+    }
+
+    /// Regenerates `src/features/timeline/calendar-fixtures.json` (like the
+    /// bindings export). The TypeScript port must reproduce every value in
+    /// it. When the `CI` environment variable is set the file is not
+    /// rewritten; instead the test fails if the committed file is stale.
+    #[test]
+    fn shared_fixtures_file_is_in_sync() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../src/features/timeline/calendar-fixtures.json");
+        let fresh = fixtures_json();
+        let on_disk = std::fs::read_to_string(&path)
+            .unwrap_or_default()
+            .replace("\r\n", "\n");
+        if on_disk != fresh {
+            assert!(
+                std::env::var_os("CI").is_none(),
+                "calendar-fixtures.json is out of date; run `cargo test` locally and commit it"
+            );
+            std::fs::write(&path, &fresh).unwrap();
+        }
+    }
 }
