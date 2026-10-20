@@ -35,7 +35,7 @@ export interface StampShape {
   w?: number;
 }
 
-export type StampCategory = "settlements" | "nature" | "other";
+export type StampCategory = "settlements" | "nature" | "biomes" | "other";
 
 export interface StampDef {
   key: string;
@@ -47,6 +47,7 @@ export interface StampDef {
 export const STAMP_CATEGORIES: readonly { id: StampCategory; label: string }[] = [
   { id: "settlements", label: "Settlements" },
   { id: "nature", label: "Nature" },
+  { id: "biomes", label: "Biomes" },
   { id: "other", label: "Other" },
 ];
 
@@ -164,6 +165,35 @@ function house(x: number, w: number, top: number, base: number, roofH: number): 
       d: `M${n(x - 3)} ${n(top)}L${n(x + w / 2)} ${n(top - roofH)}L${n(x + w + 3)} ${n(top)}Z`,
       fill: "accent",
     },
+  ];
+}
+
+/**
+ * A palm tree: a curved trunk from (cx, by) up to a crown `h` higher and
+ * `lean` to the side, with fronds sized by `s`. Returns trunk, fronds, coconuts.
+ */
+function palm(cx: number, by: number, h: number, lean: number, s: number): StampShape[] {
+  const tx = cx + lean;
+  const ty = by - h;
+  const mx = cx + lean * 0.3;
+  const my = by - h * 0.5;
+  const trunk =
+    `M${n(cx - 2.5)} ${n(by)}Q${n(mx - 2)} ${n(my)} ${n(tx - 1.5)} ${n(ty)}` +
+    `H${n(tx + 1.5)}Q${n(mx + 2)} ${n(my)} ${n(cx + 2.5)} ${n(by)}Z`;
+  // Each frond is a crescent: out to the tip along one curve, back along a flatter one.
+  const frond = (dx: number, dy: number, bend: number) => {
+    const ex = tx + dx * s;
+    const ey = ty + dy * s;
+    const qx = tx + dx * s * 0.5;
+    const qy = ty + dy * s * 0.5 - bend * s;
+    return `M${n(tx)} ${n(ty)}Q${n(qx)} ${n(qy)} ${n(ex)} ${n(ey)}Q${n(qx)} ${n(qy + 6 * s)} ${n(tx)} ${n(ty)}Z`;
+  };
+  const fronds =
+    frond(-22, 8, 10) + frond(22, 8, 10) + frond(-15, -5, 7) + frond(15, -5, 7) + frond(-4, 16, 2);
+  return [
+    { d: trunk, fill: "paper", w: 1.6 },
+    { d: fronds, fill: "accent", w: 1.6 },
+    { d: `M${n(tx - 2)} ${n(ty + 1)}a1.8 1.8 0 1 0 0.1 0Z`, fill: "ink", w: 0.8 },
   ];
 }
 
@@ -340,6 +370,149 @@ export const STAMPS: readonly StampDef[] = [
         fill: "white",
         w: 1.6,
       },
+    ],
+  },
+  // ---- biomes (cold, arid, tropical, volcanic) ----
+  {
+    key: "snowy-mountain",
+    name: "Snowy mountain",
+    category: "biomes",
+    shapes: [
+      { d: "M4 86L44 16L64 48L74 36L96 86Z", fill: "paper" },
+      { d: "M64 48L56 62L62 86H42L50 62L53 46Z", fill: "accent", w: 1.4 },
+      { d: "M74 36L96 86H80L76 62Z", fill: "accent", w: 1.4 },
+      { d: "M44 16L29 42L36 38L41 46L47 39L53 46L58 40L64 48Z", fill: "white", w: 1.6 },
+      { d: "M74 36L67 46L71 44L75 49L80 49Z", fill: "white", w: 1.4 },
+    ],
+  },
+  {
+    key: "glacier",
+    name: "Glacier",
+    category: "biomes",
+    shapes: [
+      { d: "M4 86L14 30L30 18L40 40L34 86Z", fill: "paper" },
+      { d: "M96 86L88 28L72 16L60 38L66 86Z", fill: "paper" },
+      { d: "M14 30L22 46L18 86H4ZM88 28L80 44L84 86H96Z", fill: "accent", w: 1.4 },
+      {
+        d: "M38 14H62L64 40L72 62L80 86L70 80L62 88L52 80L42 88L32 80L22 86L30 62L36 40Z",
+        fill: "white",
+      },
+      {
+        d: "M44 30l4 6M54 26l-3 7M40 52l6 6M58 50l-5 7M46 68l5 5M60 66l-4 6",
+        fill: "none",
+        w: 1.4,
+      },
+    ],
+  },
+  {
+    key: "ice-floe",
+    name: "Ice floe",
+    category: "biomes",
+    shapes: [
+      { d: "M4 76Q12 72 20 76T36 76M62 72Q70 68 78 72T94 72", fill: "none", w: 1.6 },
+      { d: "M66 90Q74 86 82 90T96 90", fill: "none", w: 1.6 },
+      { d: "M8 62L30 70L48 64V68L30 75L8 67Z", fill: "accent", w: 1.4 },
+      { d: "M8 62L22 52L44 54L48 64L30 70Z", fill: "white" },
+      { d: "M54 46L62 58L86 56L90 46V50L86 60L62 62L54 50Z", fill: "accent", w: 1.4 },
+      { d: "M54 46L72 40L90 46L86 56L62 58Z", fill: "white" },
+      { d: "M34 82L38 87L54 86L60 80V83L54 89L38 90L34 85Z", fill: "accent", w: 1.4 },
+      { d: "M34 82L46 76L60 80L54 86L38 87Z", fill: "white" },
+      { d: "M30 56l4 6M72 44l-3 6", fill: "none", w: 1.2 },
+    ],
+  },
+  {
+    key: "tundra",
+    name: "Tundra",
+    category: "biomes",
+    shapes: [
+      { d: "M8 60Q20 56 32 60M60 58Q74 54 90 58", fill: "none", w: 1.4 },
+      { d: "M24 84Q24 74 32 76Q38 68 44 76Q50 76 50 84Z", fill: "accent" },
+      { d: "M52 84Q56 74 70 74Q86 74 90 84Z", fill: "white", w: 1.6 },
+      { d: "M10 84l-3-12M14 84V69M18 84l3-12M66 76l-2-8M70 75V65M74 76l2-8", fill: "none", w: 1.6 },
+      { d: "M6 84H94", fill: "none", w: 2 },
+    ],
+  },
+  {
+    key: "dunes",
+    name: "Dunes",
+    category: "biomes",
+    shapes: [
+      { d: "M30 70Q50 34 70 50Q82 58 96 70Z", fill: "paper" },
+      { d: "M50 47Q58 56 60 70H96Q82 58 70 50Q60 44 50 47Z", fill: "accent", w: 1.4 },
+      { d: "M4 86Q22 50 46 66Q58 74 68 86Z", fill: "paper" },
+      { d: "M24 63Q30 72 30 86H68Q58 74 46 66Q34 59 24 63Z", fill: "accent", w: 1.4 },
+      { d: "M48 86Q66 60 84 70Q92 76 96 86Z", fill: "paper" },
+      { d: "M12 80q6-4 12-2M58 80q6-4 12-2M36 58q5-3 9-1", fill: "none", w: 1.4 },
+    ],
+  },
+  {
+    key: "oasis",
+    name: "Oasis",
+    category: "biomes",
+    shapes: [
+      ...palm(32, 78, 40, -6, 0.8),
+      ...palm(66, 76, 48, 6, 0.9),
+      { d: "M20 81Q20 71 50 71Q80 71 80 81Q80 91 50 91Q20 91 20 81Z", fill: "accent", w: 2 },
+      { d: "M34 80q6-3 12 0M54 85q5-2 10 0", fill: "none", w: 1.2 },
+    ],
+  },
+  {
+    key: "cactus",
+    name: "Cactus",
+    category: "biomes",
+    shapes: [
+      { d: "M42 62H32Q26 62 26 56V40Q26 34 31 34Q36 34 36 40V52H42Z", fill: "accent" },
+      { d: "M58 54H68Q74 54 74 48V32Q74 26 69 26Q64 26 64 32V44H58Z", fill: "accent" },
+      { d: "M42 88V30Q42 20 50 20Q58 20 58 30V88Z", fill: "accent" },
+      { d: "M50 28V84M31 40V56M69 32V48", fill: "none", w: 1.1 },
+      { d: "M20 88l3-3 4 3zM74 88l3-3 4 3z", fill: "paper", w: 1.4 },
+      { d: "M14 88H86", fill: "none", w: 2 },
+    ],
+  },
+  {
+    key: "mesa",
+    name: "Mesa",
+    category: "biomes",
+    shapes: [
+      { d: "M6 86L18 72L24 42H76L82 72L94 86Z", fill: "paper" },
+      { d: "M62 42H76L82 72L94 86H70L66 62Z", fill: "accent", w: 1.4 },
+      { d: "M23 52H77M20.5 64H79.5", fill: "none", w: 1.4 },
+      { d: "M12 80l4-2M84 80l-4-2", fill: "none", w: 1.4 },
+      { d: "M4 86H96", fill: "none", w: 2 },
+    ],
+  },
+  {
+    key: "jungle",
+    name: "Jungle",
+    category: "biomes",
+    shapes: [
+      { d: "M8 62Q6 44 22 42Q26 26 42 30Q50 18 62 28Q78 24 80 40Q96 42 92 62Z", fill: "accent" },
+      { d: "M20 64Q16 52 30 50Q36 40 48 46Q58 38 68 48Q82 46 82 62Z", fill: "paper" },
+      { d: "M30 86V62H35V86ZM62 86V60H67V86Z", fill: "ink", w: 1 },
+      { d: "M10 88Q6 66 24 58Q28 78 10 88Z", fill: "paper" },
+      { d: "M90 88Q94 66 76 58Q72 78 90 88Z", fill: "paper" },
+      { d: "M50 88Q34 70 48 50Q64 68 50 88Z", fill: "accent" },
+      { d: "M10 88L22 62M90 88L78 62M50 88L48 54", fill: "none", w: 1.2 },
+      { d: "M18 46q4 4 8 2M52 32q4 4 8 2M74 42q4 4 8 2", fill: "none", w: 1.4 },
+    ],
+  },
+  {
+    key: "palm",
+    name: "Palm",
+    category: "biomes",
+    shapes: [...palm(50, 86, 58, 8, 1.3), { d: "M26 88Q50 78 74 88Z", fill: "paper" }],
+  },
+  {
+    key: "lava-field",
+    name: "Lava field",
+    category: "biomes",
+    shapes: [
+      { d: "M4 70L20 56L48 52L78 54L96 66L92 84L60 90L24 88L6 82Z", fill: "ink" },
+      { d: "M12 72L28 66L34 72L48 68L50 71L35 76L28 70L13 75Z", fill: "hot", w: 0 },
+      { d: "M48 68L58 60L72 62L74 65L60 64L50 71Z", fill: "hot", w: 0 },
+      { d: "M50 71L62 78L80 74L88 78L87 81L80 78L62 82L49 74Z", fill: "hot", w: 0 },
+      { d: "M28 70L30 80L42 86L40 88L27 82L25 70Z", fill: "hot", w: 0 },
+      { d: "M30 44a5 5 0 1 1 0.1 0ZM70 40a6 6 0 1 1 0.1 0Z", fill: "white", w: 1.4 },
     ],
   },
   // ---- other ----

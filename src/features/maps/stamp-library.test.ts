@@ -10,17 +10,49 @@ import {
   stampPalette,
   stampsIn,
 } from "./stamp-library";
+import STAMP_KEYS from "./stamp-keys.json";
 
 /** Keys the backend sample world and dev seeder already use. */
 const REQUIRED = ["mountain", "forest", "city", "castle", "tower"];
 
 describe("stamp library", () => {
-  it("has 16 to 24 stamps with unique keys the backend accepts", () => {
-    expect(STAMPS.length).toBeGreaterThanOrEqual(16);
-    expect(STAMPS.length).toBeLessThanOrEqual(24);
+  it("has unique keys the backend accepts", () => {
     const keys = STAMPS.map((s) => s.key);
     expect(new Set(keys).size).toBe(keys.length);
     for (const key of keys) expect(key).toMatch(/^[a-z0-9-]{1,64}$/);
+  });
+
+  it("matches the key list shared with the Rust generator", () => {
+    // `stamp-keys.json` is also read by the backend, so both sides agree on the keys.
+    const keys = STAMPS.map((s) => s.key).sort();
+    expect(keys).toEqual([...STAMP_KEYS].sort());
+    expect([...STAMP_KEYS]).toEqual([...STAMP_KEYS].sort());
+  });
+
+  it("gives every stamp at least one shape with path data", () => {
+    for (const s of STAMPS) {
+      expect(s.shapes.length, s.key).toBeGreaterThan(0);
+      for (const shape of s.shapes) expect(shape.d.trim(), s.key).not.toBe("");
+    }
+  });
+
+  it("includes the climate stamps used by procedural generation", () => {
+    for (const key of [
+      "snowy-mountain",
+      "glacier",
+      "ice-floe",
+      "tundra",
+      "dunes",
+      "oasis",
+      "cactus",
+      "mesa",
+      "jungle",
+      "palm",
+      "lava-field",
+    ]) {
+      expect(stampByKey(key)?.category, key).toBe("biomes");
+    }
+    expect(stampByKey("lava-field")?.shapes.some((sh) => sh.fill === "hot")).toBe(true);
   });
 
   it("includes every key the sample world uses", () => {
