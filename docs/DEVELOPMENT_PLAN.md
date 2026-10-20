@@ -356,9 +356,9 @@ CREATE INDEX idx_events_start ON events(start_day);
 
 **Not done (optional items):** portraits on map pins (pins are drawn in a separate Konva root; the type glyph stays) and task lists / highlight in the lore editor (the importer downgrades them to text).
 
-### Phase 14 — Procedural world generation (BONUS, not started)
+### Phase 14 — Procedural world generation (BONUS, in progress: 14a done)
 
-> **Bonus phase.** This goes beyond the original roadmap (Phases 0–13 are complete). It is optional and **has not been started**. Do not begin it without an explicit go-ahead. When it is approved, do it as three sub-phases (14a, 14b, 14c), each with its own review stop.
+> **Bonus phase.** This goes beyond the original roadmap (Phases 0–13 are complete). It is optional. 14a was approved and built; 14b/14c follow the same review-stop rule. When it is approved, do it as three sub-phases (14a, 14b, 14c), each with its own review stop.
 
 **Goal:** generate a believable starting world from a seed and a few settings: a terrain map, places, kingdoms and (optionally) people and history. Everything generated is ordinary, editable Orbis data.
 
@@ -402,18 +402,18 @@ CREATE INDEX idx_events_start ON events(start_day);
 
 **UX:** a "Generate world" wizard (welcome page and gear menu): seed (random by default, with a dice button), map size, **land shape**, land %, **climate** (preset plus optional temperature and rainfall sliders), number of kingdoms, and scope (map only / + places / + history). It shows a fast low-resolution preview rendered by Rust with "Reroll", then generates into a new world or as a new map in the open world, with a progress bar and a result summary.
 
-#### 14a — Terrain map
+#### 14a — Terrain map (done)
 
-- [ ] Seeded RNG wrapper and generator params model (`GeneratorParams`, validated: size within map limits, land 10–90 %, kingdoms 1–12, `LandShape` and `Climate` enums, temperature and rainfall offsets −1.0…1.0)
-- [ ] Heightmap from fractal noise (fBm) multiplied by the continent masks of the chosen land shape; moisture map
-- [ ] Temperature map: climate base value, colder towards the top and bottom edges (latitude) and with altitude (lapse rate), plus the temperature slider
-- [ ] Render the heightmap to a PNG background (water depth, shoreline, elevation shading, sea ice where water is below freezing) using the climate's colour palette and register it as a map asset with a thumbnail
-- [ ] Coastline traced with marching squares, simplified, and saved as `area` objects on a "Terrain" layer
-- [ ] Rivers: from high cells along the steepest descent to the sea, saved as smoothed `path` objects
-- [ ] Biomes from height, moisture **and temperature** (e.g. ice sheet, tundra, taiga, snow-capped peaks, temperate forest, grassland, desert, jungle, swamp, ash plain); scatter matching stamps with Poisson-disk sampling on a "Features" layer
-- [ ] New stamps in `src/features/maps/stamp-library.ts` (with the key list shared with Rust): cold (`snowy-mountain`, `glacier`, `ice-floe`, `tundra`), arid (`dunes`, `oasis`, `cactus`, `mesa`), tropical (`jungle`, `palm`) and volcanic (`lava-field`); each drawn in the existing 100×100 SVG-path format and shown in the stamp palette
-- [ ] `preview_generation` command (low-res PNG as base64) and the wizard with seed, size, land % and "Reroll"
-- [ ] **Tests:** same seed gives an identical plan; different seeds differ; every op batch is within `MAX_OPS` and every shape within `MAX_POINTS`; rivers end at sea level; only known stamp keys are used; each land shape gives its expected number of land masses (e.g. archipelago ≥ 8 islands, continent 1 dominant mass); the frozen preset is mostly cold biomes and the arid preset mostly dry ones; climate changes biomes but not the coastline for the same seed; the generated map opens through `get_map`
+- [x] Seeded RNG wrapper and generator params model (`GeneratorParams`, validated: size within map limits, land 10–90 %, kingdoms 1–12, `LandShape` and `Climate` enums, temperature and rainfall offsets −1.0…1.0)
+- [x] Heightmap from fractal noise (fBm) multiplied by the continent masks of the chosen land shape; moisture map
+- [x] Temperature map: climate base value, colder towards the top and bottom edges (latitude) and with altitude (lapse rate), plus the temperature slider
+- [x] Render the heightmap to a PNG background (water depth, shoreline, elevation shading, sea ice where water is below freezing) using the climate's colour palette and register it as a map asset with a thumbnail
+- [x] Coastline traced with marching squares, simplified, and saved as `area` objects on a "Terrain" layer
+- [x] Rivers: from high cells along the steepest descent to the sea, saved as smoothed `path` objects
+- [x] Biomes from height, moisture **and temperature** (e.g. ice sheet, tundra, taiga, snow-capped peaks, temperate forest, grassland, desert, jungle, swamp, ash plain); scatter matching stamps with Poisson-disk sampling on a "Features" layer
+- [x] New stamps in `src/features/maps/stamp-library.ts` (with the key list shared with Rust): cold (`snowy-mountain`, `glacier`, `ice-floe`, `tundra`), arid (`dunes`, `oasis`, `cactus`, `mesa`), tropical (`jungle`, `palm`) and volcanic (`lava-field`); each drawn in the existing 100×100 SVG-path format and shown in the stamp palette
+- [x] `preview_generation` command (low-res PNG as base64) and the wizard with seed, size, land % and "Reroll"
+- [x] **Tests:** same seed gives an identical plan; different seeds differ; every op batch is within `MAX_OPS` and every shape within `MAX_POINTS`; rivers end at sea level; only known stamp keys are used; each land shape gives its expected number of land masses (e.g. archipelago ≥ 8 islands, continent 1 dominant mass); the frozen preset is mostly cold biomes and the arid preset mostly dry ones; climate changes biomes but not the coastline for the same seed; the generated map opens through `get_map`
 - **Acceptance:** generate a 4000×3000 map from seed 42 twice and get the same result; regenerate seed 42 as "Archipelago" and as "Frozen" and see clearly different worlds (islands; snow, ice and pine forests); the map has land, sea, rivers and biome stamps, and stays smooth to pan and zoom on Windows and Linux
 
 #### 14b — Places
