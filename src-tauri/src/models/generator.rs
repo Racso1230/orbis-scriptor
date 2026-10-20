@@ -41,7 +41,7 @@ pub enum Climate {
     Volcanic,
 }
 
-/// How much of a world to generate. Only `MapOnly` is used in Phase 14a.
+/// How much of a world to generate. `History` arrives in Phase 14c.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum GenerationScope {
@@ -194,6 +194,10 @@ pub struct GenerationStats {
     pub stamps: u32,
     /// Number of grid cells per biome (water biomes included).
     pub biome_counts: BTreeMap<Biome, u32>,
+    /// Settlements placed (0 for the map-only scope).
+    pub settlements: u32,
+    /// Road objects drawn (0 for the map-only scope).
+    pub roads: u32,
 }
 
 #[cfg(test)]

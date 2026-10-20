@@ -11,7 +11,9 @@
 //! 3. `coast`   — marching squares → simplified land and lake polygons
 //! 4. `scatter` — Poisson-disk biome stamps
 //! 5. `render`  — background PNG
-//! 6. `plan`    — Terrain / Rivers / Features layers + stats
+//! 6. `places`  — (scope "places") settlements, names (`names`) and roads
+//!    (`roads`, A*)
+//! 7. `plan`    — Terrain / Rivers / Roads / Features / Places layers + stats
 
 mod biomes;
 mod climate;
@@ -19,10 +21,13 @@ pub mod coast;
 pub mod fields;
 mod geometry;
 mod land_shape;
+pub mod names;
+pub mod places;
 pub mod plan;
 pub mod render;
 pub mod rivers;
 mod rng;
+pub mod roads;
 pub mod scatter;
 pub mod stamps;
 pub mod writer;
@@ -30,18 +35,38 @@ pub mod writer;
 use std::collections::BTreeMap;
 
 use crate::error::{AppError, AppResult};
-use crate::models::generator::{GenerationStats, GeneratorParams};
+use crate::models::generate::GeneratePhase;
+use crate::models::generator::{GenerationScope, GenerationStats, GeneratorParams};
 
 pub use fields::{GridLayout, TerrainGrid};
+pub use places::{RegionName, Settlement, Tier};
 pub use plan::{
-    GENERATOR_VERSION, GeneratedLayer, GeneratedMap, GeneratedObject, LAYER_FEATURES, LAYER_RIVERS,
-    LAYER_TERRAIN, ObjectRole,
+    GENERATOR_VERSION, GeneratedLayer, GeneratedMap, GeneratedObject, GeneratedPlaces,
+    LAYER_FEATURES, LAYER_PLACES, LAYER_RIVERS, LAYER_ROADS, LAYER_TERRAIN, ObjectRole,
 };
+pub use roads::{Road, Route};
 pub use stamps::{is_known_stamp, known_stamp_keys};
 
-/// Generates the full terrain plan for a map.
+/// Generates the full plan for a map (terrain, and places when the scope
+/// asks for them).
 pub fn generate_map(params: &GeneratorParams) -> AppResult<GeneratedMap> {
+    generate_map_with_progress(params, &mut |_, _, _| {})
+}
+
+/// [`generate_map`] that reports its stages: `(generating, 0, 1)` …
+/// `(generating, 1, 1)`, then for the places scope `(placing, 0, 1)` …
+/// `(placing, 1, 1)`. Still pure: the callback is the only side effect.
+pub fn generate_map_with_progress(
+    params: &GeneratorParams,
+    on_progress: &mut dyn FnMut(GeneratePhase, u32, u32),
+) -> AppResult<GeneratedMap> {
     params.validate()?;
+    if params.scope == GenerationScope::History {
+        return Err(AppError::Validation(
+            "History generation arrives in 14c".into(),
+        ));
+    }
+    on_progress(GeneratePhase::Generating, 0, 1);
     let layout = GridLayout::for_map(params.width, params.height);
     let mut grid = fields::build_grid(params, layout);
 
@@ -49,18 +74,39 @@ pub fn generate_map(params: &GeneratorParams) -> AppResult<GeneratedMap> {
     let rivers = rivers::trace_rivers(&mut grid, &mut river_rng);
     let polygons = coast::coast_polygons(&grid);
     let mut scatter_rng = rng::stage_rng(params.seed, rng::Stage::Scatter);
-    let stamps = scatter::scatter_stamps(&grid, params.climate, &mut scatter_rng);
+    let mut stamps = scatter::scatter_stamps(&grid, params.climate, &mut scatter_rng);
 
     let (bw, bh) = render::background_size(params.width, params.height);
     let image = render::render_image(&grid, params.climate, bw, bh);
     let background_png = render::encode_png(&image)?;
+    on_progress(GeneratePhase::Generating, 1, 1);
 
-    let stats = stats(&grid, rivers.len(), stamps.len());
-    let layers = vec![
+    let places = if params.scope == GenerationScope::MapOnly {
+        None
+    } else {
+        on_progress(GeneratePhase::Placing, 0, 1);
+        let places = generate_places(&grid, params);
+        clear_stamps_around(&grid, &mut stamps, &places.settlements);
+        on_progress(GeneratePhase::Placing, 1, 1);
+        Some(places)
+    };
+
+    let mut stats = stats(&grid, rivers.len(), stamps.len());
+    let mut layers = vec![
         plan::terrain_layer(&grid, params.climate, polygons),
         plan::river_layer(&grid, params.climate, &rivers),
-        plan::feature_layer(&stamps),
     ];
+    // `if let Some(p) = &places` borrows the value inside the Option
+    // without moving it out, so `places` can still go into the plan below.
+    if let Some(p) = &places {
+        layers.push(plan::road_layer(&grid, &p.roads));
+    }
+    layers.push(plan::feature_layer(&stamps));
+    if let Some(p) = &places {
+        layers.push(plan::places_layer(&grid, &p.settlements));
+        stats.settlements = p.settlements.len() as u32;
+        stats.roads = p.roads.len() as u32;
+    }
     Ok(GeneratedMap {
         params: params.clone(),
         generator_version: GENERATOR_VERSION,
@@ -73,7 +119,40 @@ pub fn generate_map(params: &GeneratorParams) -> AppResult<GeneratedMap> {
         stats,
         grid,
         rivers,
+        places,
     })
+}
+
+/// Settlements, their names and regions, and the roads between them.
+fn generate_places(grid: &TerrainGrid, params: &GeneratorParams) -> GeneratedPlaces {
+    let mut place_rng = rng::stage_rng(params.seed, rng::Stage::Places);
+    let mut names = names::NameGenerator::new(rng::stage_rng(params.seed, rng::Stage::Names));
+    let (settlements, regions, spacing) =
+        places::place_settlements(grid, params, &mut place_rng, &mut names);
+    let (roads, routes) = roads::build_roads(grid, &settlements);
+    GeneratedPlaces {
+        settlements,
+        roads,
+        routes,
+        regions,
+        spacing,
+    }
+}
+
+/// Removes the biome stamps a settlement stamp would sit on.
+fn clear_stamps_around(
+    grid: &TerrainGrid,
+    stamps: &mut Vec<scatter::StampPlacement>,
+    settlements: &[Settlement],
+) {
+    let size = places::stamp_size(grid);
+    // `retain` keeps only the elements for which the closure returns true.
+    stamps.retain(|st| {
+        settlements.iter().all(|s| {
+            let reach = 32.0 * (size * s.tier.stamp_factor() + st.scale) * 0.9;
+            (st.x - s.x).hypot(st.y - s.y) >= reach
+        })
+    });
 }
 
 /// Smallest and largest preview side the wizard may ask for.
@@ -127,6 +206,8 @@ fn stats(grid: &TerrainGrid, rivers: usize, stamps: usize) -> GenerationStats {
         rivers: rivers as u32,
         stamps: stamps as u32,
         biome_counts,
+        settlements: 0,
+        roads: 0,
     }
 }
 
@@ -197,6 +278,7 @@ mod tests {
         ] {
             let map = generate_map(&GeneratorParams {
                 land_shape: shape,
+                scope: GenerationScope::Places,
                 ..small(7)
             })
             .unwrap();
@@ -215,6 +297,7 @@ mod tests {
                             assert!((2..=MAX_POINTS).contains(&points.len()));
                         }
                         MapGeometry::Stamp { scale, .. } => assert!(*scale > 0.0),
+                        MapGeometry::Pin { .. } => {}
                         other => panic!("unexpected geometry {other:?}"),
                     }
                     let in_map =
@@ -223,7 +306,9 @@ mod tests {
                         MapGeometry::Area { points } | MapGeometry::Path { points, .. } => {
                             assert!(points.iter().all(|p| in_map(p.x, p.y)));
                         }
-                        MapGeometry::Stamp { x, y, .. } => assert!(in_map(*x, *y)),
+                        MapGeometry::Stamp { x, y, .. } | MapGeometry::Pin { x, y } => {
+                            assert!(in_map(*x, *y));
+                        }
                         _ => {}
                     }
                 }
@@ -452,6 +537,317 @@ mod tests {
         assert_eq!((img.width(), img.height()), (128, 256));
     }
 
+    fn with_places(params: GeneratorParams) -> GeneratorParams {
+        GeneratorParams {
+            scope: GenerationScope::Places,
+            ..params
+        }
+    }
+
+    fn places(map: &GeneratedMap) -> &GeneratedPlaces {
+        map.places.as_ref().expect("places scope")
+    }
+
+    /// Union-find root (used to check road connectivity).
+    fn root(parent: &mut [usize], mut x: usize) -> usize {
+        while parent[x] != x {
+            parent[x] = parent[parent[x]];
+            x = parent[x];
+        }
+        x
+    }
+
+    /// Joins every pair of consecutive road nodes; returns the node sets.
+    fn road_network(map: &GeneratedMap) -> Vec<usize> {
+        let mut parent: Vec<usize> = (0..map.grid.layout.len()).collect();
+        for road in &places(map).roads {
+            for w in road.nodes.windows(2) {
+                let (a, b) = (root(&mut parent, w[0]), root(&mut parent, w[1]));
+                parent[a] = b;
+            }
+        }
+        parent
+    }
+
+    /// A few varied worlds with places, at the small test size.
+    fn place_worlds() -> Vec<GeneratedMap> {
+        let mut out = Vec::new();
+        for seed in [1, 42, 1234] {
+            out.push(generate_map(&with_places(small(seed))).unwrap());
+        }
+        for (shape, climate) in [
+            (LandShape::Archipelago, Climate::Temperate),
+            (LandShape::Continent, Climate::Frozen),
+            (LandShape::Continent, Climate::Arid),
+            (LandShape::Pangaea, Climate::Tropical),
+        ] {
+            out.push(
+                generate_map(&with_places(GeneratorParams {
+                    land_shape: shape,
+                    climate,
+                    ..small(7)
+                }))
+                .unwrap(),
+            );
+        }
+        out
+    }
+
+    #[test]
+    fn map_only_has_no_places() {
+        let map = generate_map(&small(42)).unwrap();
+        assert!(map.places.is_none());
+        assert_eq!((map.stats.settlements, map.stats.roads), (0, 0));
+    }
+
+    #[test]
+    fn history_scope_is_not_available_yet() {
+        let params = GeneratorParams {
+            scope: GenerationScope::History,
+            ..small(1)
+        };
+        let err = generate_map(&params).unwrap_err();
+        assert!(
+            matches!(&err, AppError::Validation(m) if m.contains("14c")),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn places_scope_reports_its_phase() {
+        let mut phases = Vec::new();
+        let mut record = |p: GeneratePhase, d: u32, t: u32| phases.push((p, d, t));
+        generate_map_with_progress(&with_places(small(3)), &mut record).unwrap();
+        assert_eq!(
+            phases,
+            [
+                (GeneratePhase::Generating, 0, 1),
+                (GeneratePhase::Generating, 1, 1),
+                (GeneratePhase::Placing, 0, 1),
+                (GeneratePhase::Placing, 1, 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn places_are_deterministic_and_vary_by_seed() {
+        let a = generate_map(&with_places(small(42))).unwrap();
+        let b = generate_map(&with_places(small(42))).unwrap();
+        assert_eq!(a.places, b.places);
+        assert_eq!(a.layers, b.layers);
+        assert_eq!(a.stats, b.stats);
+        let c = generate_map(&with_places(small(43))).unwrap();
+        assert_ne!(places(&a).settlements, places(&c).settlements);
+        let names = |m: &GeneratedMap| -> Vec<String> {
+            places(m)
+                .settlements
+                .iter()
+                .map(|s| s.name.clone())
+                .collect()
+        };
+        assert_ne!(names(&a), names(&c));
+        // The terrain is the same as without places (only the stamps under
+        // settlements are cleared).
+        let plain = generate_map(&small(42)).unwrap();
+        assert_eq!(plain.background_png, a.background_png);
+        assert_eq!(layer(&plain, LAYER_TERRAIN), layer(&a, LAYER_TERRAIN));
+        assert!(
+            layer(&a, LAYER_FEATURES).objects.len() <= layer(&plain, LAYER_FEATURES).objects.len()
+        );
+    }
+
+    #[test]
+    fn places_layers_and_stats_match() {
+        let map = generate_map(&with_places(small(42))).unwrap();
+        let names: Vec<&str> = map.layers.iter().map(|l| l.name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                LAYER_TERRAIN,
+                LAYER_RIVERS,
+                LAYER_ROADS,
+                LAYER_FEATURES,
+                LAYER_PLACES
+            ]
+        );
+        let p = places(&map);
+        assert_eq!(map.stats.settlements as usize, p.settlements.len());
+        assert_eq!(map.stats.roads as usize, p.roads.len());
+        assert_eq!(layer(&map, LAYER_ROADS).objects.len(), p.roads.len());
+        assert_eq!(
+            map.stats.stamps as usize,
+            layer(&map, LAYER_FEATURES).objects.len()
+        );
+        let objects = &layer(&map, LAYER_PLACES).objects;
+        assert_eq!(objects.len(), 2 * p.settlements.len());
+        for (index, s) in p.settlements.iter().enumerate() {
+            let (stamp, pin) = (&objects[2 * index], &objects[2 * index + 1]);
+            assert_eq!(stamp.role, ObjectRole::Settlement { index });
+            assert_eq!(pin.role, ObjectRole::SettlementPin { index });
+            let MapGeometry::Stamp { x, y, icon, .. } = &stamp.geometry else {
+                panic!("settlement stamp expected");
+            };
+            assert!(is_known_stamp(icon), "{icon}");
+            assert_eq!((*x, *y), (s.x, s.y));
+            assert_eq!(pin.geometry, MapGeometry::Pin { x: s.x, y: s.y });
+            assert_eq!(s.kind, s.tier.kind());
+        }
+        for road in &layer(&map, LAYER_ROADS).objects {
+            assert!(road.style["dash"].as_array().is_some_and(|d| d.len() == 2));
+        }
+    }
+
+    #[test]
+    fn capitals_match_the_kingdom_count() {
+        // Default (5 kingdoms) and the extremes. Capitals are spaced at
+        // least 6 % of the map diagonal apart; only a world with very little
+        // habitable land could end up with fewer (none of these do).
+        for kingdoms in [1, 5, 12] {
+            for seed in [1, 42] {
+                let map = generate_map(&with_places(GeneratorParams {
+                    kingdoms,
+                    width: 1600,
+                    height: 1200,
+                    ..small(seed)
+                }))
+                .unwrap();
+                let capitals = places(&map)
+                    .settlements
+                    .iter()
+                    .filter(|s| s.tier == Tier::Capital)
+                    .count();
+                assert_eq!(capitals, usize::from(kingdoms), "seed {seed}");
+            }
+        }
+    }
+
+    #[test]
+    fn settlements_are_on_habitable_land_and_spaced_out() {
+        for map in place_worlds() {
+            let p = places(&map);
+            let grid = &map.grid;
+            assert!(!p.settlements.is_empty());
+            assert!(p.settlements.len() <= places::MAX_SETTLEMENTS);
+            let diag = grid.layout.width.hypot(grid.layout.height);
+            assert!(p.spacing.capital >= 0.06 * diag - 1e-9);
+            let water = fields::distance_to_water(grid);
+            for s in &p.settlements {
+                let i = s.cell;
+                assert!(grid.is_land(i));
+                assert_eq!(grid.nearest(s.x, s.y), i);
+                assert!(
+                    !places::is_uninhabitable(grid.biome[i]),
+                    "{:?}",
+                    grid.biome[i]
+                );
+                assert!(!matches!(
+                    grid.biome[i],
+                    Biome::IceSheet | Biome::SnowyPeaks
+                ));
+                if grid.biome[i] == Biome::Desert {
+                    // Desert settlements need a river or a coast nearby.
+                    let river_near = grid.river[i]
+                        || grid
+                            .neighbours8(i)
+                            .any(|n| grid.river[n] || grid.neighbours8(n).any(|m| grid.river[m]));
+                    assert!(river_near || water[i] <= 2);
+                }
+            }
+            for (a_i, a) in p.settlements.iter().enumerate() {
+                for b in &p.settlements[a_i + 1..] {
+                    let d = (a.x - b.x).hypot(a.y - b.y);
+                    let min = p.spacing.for_tier(a.tier.max(b.tier));
+                    assert!(d >= min - 1e-6, "{} {} {d} < {min}", a.name, b.name);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn ports_are_only_on_unfrozen_sea_coasts() {
+        for map in place_worlds() {
+            let grid = &map.grid;
+            for s in &places(&map).settlements {
+                let i = s.cell;
+                let ring: Vec<usize> = grid
+                    .neighbours8(i)
+                    .flat_map(|n| grid.neighbours8(n).collect::<Vec<_>>())
+                    .collect();
+                let open_sea = ring.iter().any(|&n| grid.biome[n] == Biome::Ocean);
+                if s.port {
+                    assert!(open_sea, "{} is a port without open sea", s.name);
+                    assert_ne!(s.tier, Tier::Village);
+                } else if s.tier != Tier::Village {
+                    assert!(!open_sea, "{} should be a port", s.name);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn roads_stay_on_land_and_connect_their_settlements() {
+        for map in place_worlds() {
+            let p = places(&map);
+            let grid = &map.grid;
+            let mut parent = road_network(&map);
+            for road in &p.roads {
+                assert!(road.nodes.len() >= 2);
+                assert!(road.nodes.iter().all(|&n| grid.is_land(n)));
+                assert!((2..=MAX_POINTS).contains(&road.points.len()));
+                for w in road.points.windows(2) {
+                    assert!(roads::segment_on_land(grid, w[0], w[1]), "road over water");
+                }
+            }
+            for route in &p.routes {
+                let a = root(&mut parent, p.settlements[route.from].cell);
+                let b = root(&mut parent, p.settlements[route.to].cell);
+                assert_eq!(a, b, "route {route:?} is not connected");
+            }
+        }
+    }
+
+    #[test]
+    fn every_settlement_reaches_a_capital_on_a_continent() {
+        for seed in [1, 42, 1234] {
+            let map = generate_map(&with_places(small(seed))).unwrap();
+            let p = places(&map);
+            let mut parent = road_network(&map);
+            let capitals: Vec<usize> = p
+                .settlements
+                .iter()
+                .filter(|s| s.tier == Tier::Capital)
+                .map(|s| s.cell)
+                .collect();
+            for s in &p.settlements {
+                let mine = root(&mut parent, s.cell);
+                let reached = capitals.iter().any(|&c| root(&mut parent, c) == mine);
+                assert!(reached, "seed {seed}: {} is cut off", s.name);
+            }
+        }
+    }
+
+    #[test]
+    fn settlements_and_regions_have_unique_names() {
+        for map in place_worlds() {
+            let p = places(&map);
+            let mut seen = std::collections::HashSet::new();
+            for name in p
+                .settlements
+                .iter()
+                .map(|s| &s.name)
+                .chain(p.regions.iter().map(|r| &r.name))
+            {
+                assert!(!name.trim().is_empty());
+                assert!(seen.insert(name.to_lowercase()), "duplicate {name}");
+            }
+            for s in &p.settlements {
+                let region = p.regions.iter().find(|r| r.mass_index == s.mass).unwrap();
+                assert_eq!(s.region, region.name);
+                assert!(s.summary.contains(&region.phrase), "{}", s.summary);
+            }
+        }
+    }
+
     /// Writes sample backgrounds for eyeballing. Run with
     /// `cargo test dump_samples -- --ignored --nocapture`.
     #[test]
@@ -489,6 +885,115 @@ mod tests {
             }
         }
         println!("written to {}", dir.display());
+    }
+
+    /// Places at the acceptance size: counts and timing. Run with
+    /// `cargo test places_4000 -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn places_4000_by_3000_report() {
+        for (shape, climate) in [
+            (LandShape::Continent, Climate::Temperate),
+            (LandShape::Archipelago, Climate::Temperate),
+            (LandShape::Continent, Climate::Frozen),
+            (LandShape::Continent, Climate::Arid),
+        ] {
+            let params = GeneratorParams {
+                scope: GenerationScope::Places,
+                land_shape: shape,
+                climate,
+                ..GeneratorParams::default()
+            };
+            let start = std::time::Instant::now();
+            let map = generate_map(&params).unwrap();
+            let total = start.elapsed();
+            let base = generate_map(&GeneratorParams {
+                scope: GenerationScope::MapOnly,
+                ..params.clone()
+            })
+            .unwrap();
+            let _ = base;
+            let places = map.places.as_ref().unwrap();
+            let tiers = |t: Tier| places.settlements.iter().filter(|s| s.tier == t).count();
+            let ports = places.settlements.iter().filter(|s| s.port).count();
+            let road_points: usize = places.roads.iter().map(|r| r.points.len()).sum();
+            println!(
+                "{shape:?}/{climate:?}: total {total:?}; capitals {} towns {} villages {} ports {ports}; roads {} ({road_points} pts); routes {}; spacing {:?}",
+                tiers(Tier::Capital),
+                tiers(Tier::Town),
+                tiers(Tier::Village),
+                places.roads.len(),
+                places.routes.len(),
+                places.spacing,
+            );
+            for l in &map.layers {
+                println!("  layer {}: {} objects", l.name, l.objects.len());
+            }
+            // Overlay roads and settlements on the background for eyeballing.
+            let mut img = image::load_from_memory(&map.background_png)
+                .unwrap()
+                .to_rgb8();
+            let sx = f64::from(img.width()) / 4000.0;
+            let dot = |img: &mut image::RgbImage, x: f64, y: f64, r: i64, c: [u8; 3]| {
+                for dy in -r..=r {
+                    for dx in -r..=r {
+                        let (px, py) = ((x * sx) as i64 + dx, (y * sx) as i64 + dy);
+                        if px >= 0
+                            && py >= 0
+                            && (px as u32) < img.width()
+                            && (py as u32) < img.height()
+                        {
+                            img.put_pixel(px as u32, py as u32, image::Rgb(c));
+                        }
+                    }
+                }
+            };
+            for road in &places.roads {
+                for w in road.points.windows(2) {
+                    for k in 0..=100 {
+                        let t = f64::from(k) / 100.0;
+                        let (x, y) = (
+                            w[0].x + (w[1].x - w[0].x) * t,
+                            w[0].y + (w[1].y - w[0].y) * t,
+                        );
+                        dot(&mut img, x, y, 2, [120, 60, 20]);
+                    }
+                }
+            }
+            for s in &places.settlements {
+                let (r, c) = match s.tier {
+                    Tier::Capital => (14, [200, 0, 0]),
+                    Tier::Town => (9, [0, 0, 0]),
+                    Tier::Village => (5, [255, 255, 255]),
+                };
+                dot(&mut img, s.x, s.y, r, c);
+            }
+            let dir = std::env::temp_dir().join("orbis-gen");
+            std::fs::create_dir_all(&dir).unwrap();
+            let img = image::imageops::thumbnail(&img, 1400, 1050);
+            img.save(dir.join(format!("places-{shape:?}-{climate:?}.png")))
+                .unwrap();
+            for r in &places.regions {
+                println!("  region {} ({})", r.name, r.phrase);
+            }
+            for s in places.settlements.iter().take(12) {
+                println!("  {:?} {} — {}", s.tier, s.name, s.summary);
+            }
+        }
+        let params = GeneratorParams {
+            scope: GenerationScope::Places,
+            ..GeneratorParams::default()
+        };
+        let layout = GridLayout::for_map(4000, 3000);
+        let mut grid = fields::build_grid(&params, layout);
+        rivers::trace_rivers(&mut grid, &mut rng::stage_rng(42, rng::Stage::Rivers));
+        let t = std::time::Instant::now();
+        let places = generate_places(&grid, &params);
+        println!(
+            "places stage alone {:?} ({} settlements)",
+            t.elapsed(),
+            places.settlements.len()
+        );
     }
 
     /// Timing check for the acceptance size. Run with

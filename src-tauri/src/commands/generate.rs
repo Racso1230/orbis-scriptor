@@ -1,4 +1,4 @@
-//! Commands for the "Generate map" wizard (Phase 14a).
+//! Commands for the "Generate map" wizard (Phases 14a and 14b).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
@@ -53,9 +53,9 @@ fn preview_base64(params: &GeneratorParams, max_side: u32) -> AppResult<String> 
 /// Checks the request and returns the name the new map will get.
 fn checked_name(params: &GeneratorParams, name: Option<&str>) -> AppResult<String> {
     params.validate()?;
-    if params.scope != GenerationScope::MapOnly {
+    if params.scope == GenerationScope::History {
         return Err(AppError::Validation(
-            "Only the map can be generated for now; places and history come later".into(),
+            "History generation arrives in 14c".into(),
         ));
     }
     // `Option::map` + `filter` turn "missing or blank" into `None`.
@@ -105,9 +105,8 @@ pub fn generate_map(
         };
         // A closure that returns `AppResult` lets us use `?` for every step.
         let mut run = || -> AppResult<(String, generator::GeneratedMap)> {
-            on_progress(GeneratePhase::Generating, 0, 1);
-            let plan = generator::generate_map(&params)?;
-            on_progress(GeneratePhase::Generating, 1, 1);
+            // Reports `generating` and, for the places scope, `placing`.
+            let plan = generator::generate_map_with_progress(&params, &mut on_progress)?;
             // Our own connection: the app's connection stays free for the
             // UI. WAL mode lets both use the database at the same time.
             let conn = db::open(&world_dir.join(DB_FILE))?;
@@ -181,6 +180,11 @@ mod tests {
             "Generated map 42"
         );
         assert_eq!(checked_name(&params, Some(" Aria ")).unwrap(), "Aria");
+        let places = GeneratorParams {
+            scope: GenerationScope::Places,
+            ..GeneratorParams::default()
+        };
+        assert!(checked_name(&places, None).is_ok());
     }
 
     #[test]
@@ -221,6 +225,8 @@ mod tests {
                 rivers: 7,
                 stamps: 90,
                 biome_counts,
+                settlements: 12,
+                roads: 9,
             }),
             error: None,
         };
@@ -228,6 +234,11 @@ mod tests {
         assert_eq!(json["mapEntityId"], "m");
         assert_eq!(json["stats"]["landMasses"], 2);
         assert_eq!(json["stats"]["biomeCounts"]["ocean"], 10);
+        assert_eq!(json["stats"]["settlements"], 12);
+        assert_eq!(
+            serde_json::to_value(GeneratePhase::Placing).unwrap(),
+            "placing"
+        );
         let back: GenerateFinished = serde_json::from_value(json).unwrap();
         assert_eq!(back, finished);
     }

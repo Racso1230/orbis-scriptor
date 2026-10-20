@@ -19,6 +19,10 @@ pub enum Stage {
     Rivers = 3,
     /// Stamp positions, icons, sizes and rotations.
     Scatter = 4,
+    /// Settlement scoring jitter (Phase 14b).
+    Places = 5,
+    /// Culture choice and names of settlements and regions (Phase 14b).
+    Names = 6,
 }
 
 /// A reproducible generator for one stage. ChaCha8 is a fast, high-quality

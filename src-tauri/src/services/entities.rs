@@ -53,6 +53,13 @@ pub fn create(conn: &Connection, input: NewEntity) -> AppResult<Entity> {
     create_with_dates(conn, input, 0, None, None)
 }
 
+/// Like [`create`] but WITHOUT its own transaction: the caller must
+/// already be inside one (the world generator creates many entities in a
+/// single transaction).
+pub fn create_in(conn: &Connection, input: NewEntity) -> AppResult<Entity> {
+    insert_with_dates(conn, input, 0, None, None)
+}
+
 /// Creates a `map` entity without an image: the `maps` row gets this size
 /// and background look instead of 0x0. Entity, map row, default layer and
 /// search entry are committed together.
@@ -176,6 +183,15 @@ pub fn list(conn: &Connection, entity_type: Option<&str>) -> AppResult<Vec<Entit
 
 /// Applies the `Some` fields of `patch` and returns the updated entity.
 pub fn update(conn: &Connection, id: &str, patch: EntityPatch) -> AppResult<Entity> {
+    let tx = conn.unchecked_transaction()?;
+    let entity = update_in(&tx, id, patch)?;
+    tx.commit()?;
+    Ok(entity)
+}
+
+/// Like [`update`] but WITHOUT its own transaction: the caller must already
+/// be inside one.
+pub fn update_in(conn: &Connection, id: &str, patch: EntityPatch) -> AppResult<Entity> {
     let mut entity = get(conn, id)?;
     if let Some(name) = patch.name {
         entity.name = validate_name(&name)?;
@@ -194,14 +210,12 @@ pub fn update(conn: &Connection, id: &str, patch: EntityPatch) -> AppResult<Enti
         fields = Some(defs);
     }
     entity.updated_at = now();
-    let tx = conn.unchecked_transaction()?;
-    db::entities::update(&tx, &entity)?;
+    db::entities::update(conn, &entity)?;
     // Entity-reference fields are mirrored as `field_ref` links.
     if let Some(defs) = &fields {
-        properties::sync_field_refs(&tx, &entity.id, defs, &entity.properties)?;
+        properties::sync_field_refs(conn, &entity.id, defs, &entity.properties)?;
     }
-    search::reindex_entity(&tx, &entity.id)?;
-    tx.commit()?;
+    search::reindex_entity(conn, &entity.id)?;
     Ok(entity)
 }
 

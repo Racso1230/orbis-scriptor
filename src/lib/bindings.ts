@@ -805,6 +805,11 @@ export type GenerateFinished = {
 export type GeneratePhase = 
 /**  Building the terrain plan in memory (heights, rivers, coast, stamps). */
 "generating" | 
+/**
+ *  Placing settlements, naming them and building roads (scope
+ *  "places").
+ */
+"placing" | 
 /**  Saving the background image into the world's `assets/` folder. */
 "rendering" | 
 /**  Writing the map, its layers and objects to the database. */
@@ -820,7 +825,7 @@ export type GenerateProgress = {
 	total: number,
 };
 
-/**  How much of a world to generate. Only `MapOnly` is used in Phase 14a. */
+/**  How much of a world to generate. `History` arrives in Phase 14c. */
 export type GenerationScope = "mapOnly" | "places" | "history";
 
 /**  A summary of what was generated, reported to the frontend when done. */
@@ -833,6 +838,10 @@ export type GenerationStats = {
 	stamps: number,
 	/**  Number of grid cells per biome (water biomes included). */
 	biomeCounts: Partial<{ [key in Biome]: number }>,
+	/**  Settlements placed (0 for the map-only scope). */
+	settlements: number,
+	/**  Road objects drawn (0 for the map-only scope). */
+	roads: number,
 };
 
 /**  Everything the generator needs. The same params always give the same map. */

@@ -1,15 +1,18 @@
 //! Saves a [`GeneratedMap`] plan into a world: the background image goes to
-//! `assets/`, everything else (map entity, layers, objects, tag, settings) is
-//! written through the existing services in ONE database transaction, so a
-//! failure leaves the world exactly as it was.
+//! `assets/`, everything else (map entity, location entities, layers,
+//! objects, tags, settings) is written through the existing services in ONE
+//! database transaction, so a failure leaves the world exactly as it was.
 
 use std::path::Path;
 
 use rusqlite::Connection;
 
-use super::plan::GeneratedMap;
+use serde_json::json;
+
+use super::plan::{GeneratedMap, GeneratedPlaces, ObjectRole};
 use crate::db;
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
+use crate::models::entity::{EntityPatch, NewEntity};
 use crate::models::generate::GeneratePhase;
 use crate::models::map::{Asset, BackgroundKind, MapBackground, MapOp, NewMapObject};
 use crate::services::{assets, entities, maps, search, tags};
@@ -27,6 +30,9 @@ pub const SETTING_LAST_MAP: &str = "generator.last_map_id";
 /// `&mut dyn FnMut(..)` is a borrowed "trait object": any closure that may
 /// change its captured variables (`FnMut`), chosen at run time (`dyn`).
 pub type GenerateProgressFn<'a> = &'a mut dyn FnMut(GeneratePhase, u32, u32);
+
+/// Location entities are created this many at a time per progress step.
+const ENTITIES_PER_STEP: usize = 25;
 
 /// Writes `plan` as a new map called `name` and returns the map's entity id.
 ///
@@ -69,9 +75,13 @@ fn write_rows(
     asset: &Asset,
     on_progress: GenerateProgressFn,
 ) -> AppResult<String> {
-    // Steps: map setup, one per batch, settings.
+    // Steps: map setup, location entities, one per batch, settings.
     let batches: usize = plan.layers.iter().map(|l| l.batches().len()).sum();
-    let total = (batches + 2) as u32;
+    let entity_steps = plan
+        .places
+        .as_ref()
+        .map_or(0, |p| p.settlements.len().div_ceil(ENTITIES_PER_STEP));
+    let total = (batches + entity_steps + 2) as u32;
     let mut done = 0u32;
     on_progress(GeneratePhase::Writing, done, total);
 
@@ -103,6 +113,27 @@ fn write_rows(
     done += 1;
     on_progress(GeneratePhase::Writing, done, total);
 
+    let names = tags::normalize_all(&[TAG_GENERATED.to_owned()])?;
+    let mut cache = tags::load_cache(&tx)?;
+
+    // One location entity per settlement; `location_ids[i]` belongs to
+    // settlement `i`, so pins can be linked to them below.
+    let mut location_ids: Vec<String> = Vec::new();
+    if let Some(places) = &plan.places {
+        let mut step = |done: &mut u32| {
+            *done += 1;
+            on_progress(GeneratePhase::Writing, *done, total);
+        };
+        location_ids = write_locations(&tx, places, &names, &mut cache, |n| {
+            if n % ENTITIES_PER_STEP == 0 {
+                step(&mut done);
+            }
+        })?;
+        if places.settlements.len() % ENTITIES_PER_STEP != 0 {
+            step(&mut done);
+        }
+    }
+
     for (index, layer) in plan.layers.iter().enumerate() {
         // The first plan layer reuses the "Default" layer the map came with.
         let layer_id = match (index, &default_layer) {
@@ -112,25 +143,36 @@ fn write_rows(
         for batch in layer.batches() {
             let ops: Vec<MapOp> = batch
                 .iter()
-                .map(|object| MapOp::Create {
-                    object: NewMapObject {
-                        id: None,
-                        layer_id: layer_id.clone(),
-                        geometry: object.geometry.clone(),
-                        style: Some(object.style.clone()),
-                        entity_id: None,
-                        created_at: None,
-                    },
+                .map(|object| {
+                    // Settlement pins link to their location entity.
+                    let entity_id = match object.role {
+                        ObjectRole::SettlementPin { index } => {
+                            Some(location_ids.get(index).cloned().ok_or_else(|| {
+                                AppError::Internal(format!("no location for settlement {index}"))
+                            })?)
+                        }
+                        _ => None,
+                    };
+                    Ok(MapOp::Create {
+                        object: NewMapObject {
+                            id: None,
+                            layer_id: layer_id.clone(),
+                            geometry: object.geometry.clone(),
+                            style: Some(object.style.clone()),
+                            entity_id,
+                            created_at: None,
+                        },
+                    })
                 })
-                .collect();
+                // Collecting into `AppResult<Vec<_>>` stops at the first
+                // error; `?` then returns it.
+                .collect::<AppResult<_>>()?;
             maps::apply_ops_in(&tx, &entity.id, ops)?;
             done += 1;
             on_progress(GeneratePhase::Writing, done, total);
         }
     }
 
-    let names = tags::normalize_all(&[TAG_GENERATED.to_owned()])?;
-    let mut cache = tags::load_cache(&tx)?;
     tags::apply_entity_tags(&tx, &entity.id, &names, &mut cache)?;
     // The search index has a tags column, so re-index after tagging.
     search::reindex_entity(&tx, &entity.id)?;
@@ -144,15 +186,57 @@ fn write_rows(
     Ok(entity.id)
 }
 
+/// Creates, tags and fills in one `location` entity per settlement (inside
+/// the caller's transaction) and returns their ids in settlement order.
+/// `after_each(n)` is called with the number created so far.
+fn write_locations(
+    conn: &Connection,
+    places: &GeneratedPlaces,
+    tag_names: &[String],
+    cache: &mut std::collections::HashMap<String, String>,
+    mut after_each: impl FnMut(usize),
+) -> AppResult<Vec<String>> {
+    let mut ids = Vec::with_capacity(places.settlements.len());
+    for settlement in &places.settlements {
+        let entity = entities::create_in(
+            conn,
+            NewEntity {
+                entity_type: "location".into(),
+                name: settlement.name.clone(),
+            },
+        )?;
+        tags::apply_entity_tags(conn, &entity.id, tag_names, cache)?;
+        // `update_in` validates the properties against the location type's
+        // fields and re-indexes the entity for search (tags included).
+        entities::update_in(
+            conn,
+            &entity.id,
+            EntityPatch {
+                name: None,
+                summary: Some(settlement.summary.clone()),
+                properties: Some(json!({
+                    "kind": settlement.kind,
+                    "region": settlement.region,
+                })),
+            },
+        )?;
+        ids.push(entity.id);
+        after_each(ids.len());
+    }
+    Ok(ids)
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::error::AppError;
+    use crate::models::generator::GenerationScope;
     use crate::models::generator::GeneratorParams;
     use crate::models::map::{MapGeometry, Point};
     use crate::services::generator::{
-        GeneratedObject, LAYER_FEATURES, LAYER_RIVERS, LAYER_TERRAIN, ObjectRole, generate_map,
+        GeneratedObject, LAYER_FEATURES, LAYER_PLACES, LAYER_RIVERS, LAYER_ROADS, LAYER_TERRAIN,
+        ObjectRole, generate_map,
     };
     use crate::services::world::{self, ASSETS_DIR};
     use crate::state::WorldHandle;
@@ -319,5 +403,122 @@ mod tests {
         assert_eq!(png_files(&w.path.join(ASSETS_DIR)), 2);
         let last = db::world_settings::get(&w.conn, SETTING_LAST_MAP).unwrap();
         assert_eq!(last.as_deref(), Some(b.as_str()));
+    }
+
+    /// A small plan with places (settlements, roads, pins).
+    fn places_plan() -> &'static GeneratedMap {
+        static PLAN: OnceLock<GeneratedMap> = OnceLock::new();
+        PLAN.get_or_init(|| {
+            generate_map(&GeneratorParams {
+                seed: 1,
+                width: 800,
+                height: 600,
+                scope: GenerationScope::Places,
+                ..GeneratorParams::default()
+            })
+            .unwrap()
+        })
+    }
+
+    #[test]
+    fn writes_places_as_linked_locations() {
+        let tmp = tempfile::tempdir().unwrap();
+        let w = new_world(tmp.path());
+        let assets_dir = w.path.join(ASSETS_DIR);
+        let plan = places_plan();
+        let settlements = &plan.places.as_ref().unwrap().settlements;
+        assert!(!settlements.is_empty());
+
+        let mut last = (GeneratePhase::Rendering, 0, 0);
+        let mut record = |p: GeneratePhase, d: u32, t: u32| last = (p, d, t);
+        let id = write_map(&w.conn, &assets_dir, plan, "Places", &mut record).unwrap();
+        assert_eq!(last.0, GeneratePhase::Writing);
+        assert_eq!(last.1, last.2);
+
+        let locations = entities::list(&w.conn, Some("location")).unwrap();
+        assert_eq!(locations.len(), settlements.len());
+        assert_eq!(plan.stats.settlements as usize, settlements.len());
+
+        let data = maps::get_map(&w.conn, &assets_dir, &id).unwrap();
+        let names: Vec<&str> = data.layers.iter().map(|l| l.name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                LAYER_TERRAIN,
+                LAYER_RIVERS,
+                LAYER_ROADS,
+                LAYER_FEATURES,
+                LAYER_PLACES
+            ]
+        );
+        let layer_id = |name: &str| {
+            data.layers
+                .iter()
+                .find(|l| l.name == name)
+                .unwrap()
+                .id
+                .clone()
+        };
+        let roads = layer_id(LAYER_ROADS);
+        let road_count = data.objects.iter().filter(|o| o.layer_id == roads).count();
+        assert_eq!(road_count, plan.stats.roads as usize);
+
+        let places_layer = layer_id(LAYER_PLACES);
+        let pins: Vec<_> = data
+            .objects
+            .iter()
+            .filter(|o| o.layer_id == places_layer && matches!(o.geometry, MapGeometry::Pin { .. }))
+            .collect();
+        assert_eq!(pins.len(), settlements.len());
+        for (pin, s) in pins.iter().zip(settlements) {
+            // Same order as the plan, each pin linked to its own location.
+            let entity_id = pin.entity_id.as_deref().expect("pin is linked");
+            assert_eq!(pin.geometry, MapGeometry::Pin { x: s.x, y: s.y });
+            assert_eq!(pin.entity_type.as_deref(), Some("location"));
+            let entity = entities::get(&w.conn, entity_id).unwrap();
+            assert_eq!(entity.name, s.name);
+            assert_eq!(entity.properties["kind"], s.kind);
+            assert_eq!(entity.properties["region"], s.region.as_str());
+            assert_eq!(entity.summary, s.summary);
+            assert_eq!(entity.tags, [TAG_GENERATED]);
+        }
+        let linked: std::collections::HashSet<&str> =
+            pins.iter().filter_map(|p| p.entity_id.as_deref()).collect();
+        assert_eq!(linked.len(), settlements.len());
+
+        // Search finds a settlement by name.
+        let hits = search::search(&w.conn, &settlements[0].name, 10).unwrap();
+        assert!(
+            hits.iter().any(|h| h.name == settlements[0].name),
+            "{hits:?}"
+        );
+    }
+
+    #[test]
+    fn a_failure_after_places_leaves_no_locations_or_pins() {
+        let tmp = tempfile::tempdir().unwrap();
+        let w = new_world(tmp.path());
+        let before = count(&w.conn, "entities");
+        // The bad object is on the last layer, after every location entity
+        // and pin was written.
+        let mut bad = places_plan().clone();
+        let last = bad.layers.len() - 1;
+        bad.layers[last].objects.push(GeneratedObject {
+            geometry: MapGeometry::Area {
+                points: vec![Point { x: 1.0, y: 1.0 }, Point { x: 2.0, y: 2.0 }],
+            },
+            style: json!({}),
+            role: ObjectRole::Coast,
+        });
+        let err = write(&w, &bad).unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)), "{err:?}");
+        assert_eq!(count(&w.conn, "entities"), before);
+        assert!(
+            entities::list(&w.conn, Some("location"))
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(count(&w.conn, "map_objects"), 0);
+        assert_eq!(png_files(&w.path.join(ASSETS_DIR)), 0);
     }
 }

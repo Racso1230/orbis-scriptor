@@ -21,6 +21,20 @@ fn segment_distance(p: Point, a: Point, b: Point) -> f64 {
 /// Written with an explicit stack instead of recursion so a 100k-point
 /// coastline cannot overflow the call stack.
 pub fn simplify(points: &[Point], tolerance: f64) -> Vec<Point> {
+    simplify_with(points, tolerance, |_, _| true)
+}
+
+/// Like [`simplify`], but a shortcut segment `a`–`b` is only accepted when
+/// `allowed(a, b)` is true (roads use it so a shortcut never cuts across
+/// water). Otherwise the farthest point is kept and both halves are tried.
+///
+/// `impl Fn(Point, Point) -> bool` accepts any closure with that shape;
+/// the compiler makes a specialised copy of this function for each one.
+pub fn simplify_with(
+    points: &[Point],
+    tolerance: f64,
+    allowed: impl Fn(Point, Point) -> bool,
+) -> Vec<Point> {
     if points.len() < 3 {
         return points.to_vec();
     }
@@ -29,14 +43,15 @@ pub fn simplify(points: &[Point], tolerance: f64) -> Vec<Point> {
     keep[points.len() - 1] = true;
     let mut stack = vec![(0, points.len() - 1)];
     while let Some((start, end)) = stack.pop() {
-        let mut best = (0.0, 0);
+        // `best.1 == 0` means "no point between start and end".
+        let mut best = (-1.0, 0);
         for i in start + 1..end {
             let d = segment_distance(points[i], points[start], points[end]);
             if d > best.0 {
                 best = (d, i);
             }
         }
-        if best.0 > tolerance {
+        if best.1 > 0 && (best.0 > tolerance || !allowed(points[start], points[end])) {
             keep[best.1] = true;
             stack.push((start, best.1));
             stack.push((best.1, end));

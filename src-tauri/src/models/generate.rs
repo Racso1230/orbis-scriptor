@@ -11,6 +11,9 @@ use crate::models::generator::GenerationStats;
 pub enum GeneratePhase {
     /// Building the terrain plan in memory (heights, rivers, coast, stamps).
     Generating,
+    /// Placing settlements, naming them and building roads (scope
+    /// "places").
+    Placing,
     /// Saving the background image into the world's `assets/` folder.
     Rendering,
     /// Writing the map, its layers and objects to the database.

@@ -6,7 +6,9 @@ use serde_json::{Value, json};
 use super::climate::{biome_color, hex, palette};
 use super::coast::CoastPolygon;
 use super::fields::TerrainGrid;
+use super::places::{RegionName, Settlement, Spacing, Tier, stamp_size};
 use super::rivers::River;
+use super::roads::{Road, Route};
 use super::scatter::StampPlacement;
 use crate::models::generator::{Biome, Climate, GenerationStats, GeneratorParams};
 use crate::models::map::MapGeometry;
@@ -19,6 +21,8 @@ pub const GENERATOR_VERSION: u32 = 1;
 pub const LAYER_TERRAIN: &str = "Terrain";
 pub const LAYER_RIVERS: &str = "Rivers";
 pub const LAYER_FEATURES: &str = "Features";
+pub const LAYER_ROADS: &str = "Roads";
+pub const LAYER_PLACES: &str = "Places";
 
 /// What a generated object represents (for the writer, tags and Phase 14b).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,6 +35,13 @@ pub enum ObjectRole {
     River { order: u8 },
     /// A biome stamp (`stamp`).
     Feature { biome: Biome },
+    /// A road (`path`), styled by the tier it was built for.
+    Road { tier: Tier },
+    /// The stamp of settlement `index` (into `GeneratedPlaces::settlements`).
+    Settlement { index: usize },
+    /// The pin of settlement `index`; the writer links it to the location
+    /// entity it creates for that settlement.
+    SettlementPin { index: usize },
 }
 
 /// One map object to create. Geometry and style are already valid for
@@ -81,6 +92,22 @@ pub struct GeneratedMap {
     pub grid: TerrainGrid,
     /// Rivers with their grid nodes (same order as the Rivers layer).
     pub rivers: Vec<River>,
+    /// Settlements, roads and region names; `None` for the map-only scope.
+    pub places: Option<GeneratedPlaces>,
+}
+
+/// The "places" part of a plan (Phase 14b).
+#[derive(Debug, Clone, PartialEq)]
+pub struct GeneratedPlaces {
+    /// Capitals first, then towns, then villages.
+    pub settlements: Vec<Settlement>,
+    /// Same order as the Roads layer.
+    pub roads: Vec<Road>,
+    /// The connections the roads were built for.
+    pub routes: Vec<Route>,
+    pub regions: Vec<RegionName>,
+    /// The spacing each tier kept.
+    pub spacing: Spacing,
 }
 
 /// Width of lines that should look the same on small and large maps.
@@ -171,6 +198,78 @@ pub fn feature_layer(stamps: &[StampPlacement]) -> GeneratedLayer {
         .collect();
     GeneratedLayer {
         name: LAYER_FEATURES.into(),
+        objects,
+    }
+}
+
+pub fn road_layer(grid: &TerrainGrid, roads: &[Road]) -> GeneratedLayer {
+    let scale = line_scale(grid);
+    let objects = roads
+        .iter()
+        .map(|road| {
+            let (width, stroke) = match road.tier {
+                Tier::Capital => (3.0, "#7c4a1e"),
+                Tier::Town => (2.2, "#8b5a2b"),
+                Tier::Village => (1.5, "#a0784f"),
+            };
+            let width = (width * scale * 10.0).round() / 10.0;
+            GeneratedObject {
+                geometry: MapGeometry::Path {
+                    points: road.points.clone(),
+                    closed: false,
+                },
+                style: json!({
+                    "stroke": stroke,
+                    "strokeWidth": width,
+                    "dash": [(width * 4.0).round(), (width * 2.5).round()],
+                    "smoothing": 0.2,
+                }),
+                role: ObjectRole::Road { tier: road.tier },
+            }
+        })
+        .collect();
+    GeneratedLayer {
+        name: LAYER_ROADS.into(),
+        objects,
+    }
+}
+
+/// Stamp key of a settlement.
+pub fn settlement_icon(s: &Settlement) -> &'static str {
+    match (s.tier, s.port) {
+        (Tier::Village, _) => "village",
+        (_, true) => "port",
+        (Tier::Capital, false) => "city",
+        (Tier::Town, false) => "town",
+    }
+}
+
+/// One stamp and one pin per settlement. The pin comes right after its
+/// stamp so it draws on top.
+pub fn places_layer(grid: &TerrainGrid, settlements: &[Settlement]) -> GeneratedLayer {
+    let size = stamp_size(grid);
+    let mut objects = Vec::with_capacity(settlements.len() * 2);
+    for (index, s) in settlements.iter().enumerate() {
+        let scale = (size * s.tier.stamp_factor() * 100.0).round() / 100.0;
+        objects.push(GeneratedObject {
+            geometry: MapGeometry::Stamp {
+                x: s.x,
+                y: s.y,
+                icon: settlement_icon(s).to_owned(),
+                scale,
+                rotation: 0.0,
+            },
+            style: json!({}),
+            role: ObjectRole::Settlement { index },
+        });
+        objects.push(GeneratedObject {
+            geometry: MapGeometry::Pin { x: s.x, y: s.y },
+            style: json!({}),
+            role: ObjectRole::SettlementPin { index },
+        });
+    }
+    GeneratedLayer {
+        name: LAYER_PLACES.into(),
         objects,
     }
 }
