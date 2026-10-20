@@ -66,6 +66,7 @@ describe("GenerateWizard", () => {
       openCount: 0,
       lastParams: null,
       lastScope: null,
+      targetMapEntityId: null,
     });
     h.previewGeneration.mockResolvedValue(ok("AAAA"));
     h.generateMap.mockResolvedValue(ok("job-1"));
@@ -143,6 +144,7 @@ describe("GenerateWizard", () => {
           scope: "mapOnly",
         },
         "Isles",
+        null,
       ),
     );
     await waitFor(() => expect(useGenerateStore.getState().state.jobId).toBe("job-1"));
@@ -202,6 +204,7 @@ describe("GenerateWizard", () => {
     await waitFor(() =>
       expect(h.generateMap).toHaveBeenCalledWith(
         expect.objectContaining({ seed: 7, kingdoms: 3, scope: "places" }),
+        null,
         null,
       ),
     );
@@ -266,5 +269,59 @@ describe("GenerateWizard", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Disk full");
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(await screen.findByRole("button", { name: "Generate" })).toBeInTheDocument();
+  });
+
+  it("generates into a target map without a name field or Open map button", async () => {
+    renderWithQuery(<GenerateWizard />);
+    act(() => useGenerateStore.getState().openDialog({ targetMapEntityId: "map-5" }));
+    expect(
+      await screen.findByRole("heading", { name: "Generate terrain for this map" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Map name")).not.toBeInTheDocument();
+    fireEvent.change(seedInput(), { target: { value: "3" } });
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    await waitFor(() =>
+      expect(h.generateMap).toHaveBeenCalledWith(
+        expect.objectContaining({ seed: 3 }),
+        null,
+        "map-5",
+      ),
+    );
+    await waitFor(() => expect(useGenerateStore.getState().state.jobId).toBe("job-1"));
+    expect(screen.getByRole("heading", { name: "Generate terrain for this map" })).toBeVisible();
+
+    const stats: PlacesStats = {
+      landPercentActual: 40,
+      landMasses: 2,
+      rivers: 3,
+      stamps: 10,
+      biomeCounts: {},
+      settlements: 0,
+      roads: 0,
+    };
+    act(() =>
+      h.finished?.({
+        payload: {
+          jobId: "job-1",
+          ok: true,
+          mapEntityId: "map-5",
+          stats,
+          error: null,
+        } satisfies GenerateFinished,
+      }),
+    );
+    expect(screen.getByRole("region", { name: "Generation result" })).toHaveTextContent(
+      "Generated a map with 2 land masses.",
+    );
+    expect(screen.queryByRole("button", { name: "Open map" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Generate another" })).not.toBeInTheDocument();
+    // The footer's Close (the dialog's own X button is also named "Close").
+    const close = screen
+      .getAllByRole("button", { name: "Close" })
+      .find((b) => b.querySelector("svg") === null);
+    expect(close).toBeDefined();
+    fireEvent.click(close as HTMLElement);
+    expect(useGenerateStore.getState().dialogOpen).toBe(false);
+    expect(h.openEntity).not.toHaveBeenCalled();
   });
 });

@@ -193,6 +193,16 @@ pub fn count_layers(conn: &Connection, map_id: &str) -> AppResult<i64> {
     )?)
 }
 
+/// Number of objects on all layers of a map.
+pub fn count_objects(conn: &Connection, map_id: &str) -> AppResult<i64> {
+    Ok(conn.query_row(
+        "SELECT count(*) FROM map_objects o JOIN map_layers l ON l.id = o.layer_id
+         WHERE l.map_id = ?1",
+        params![map_id],
+        |row| row.get(0),
+    )?)
+}
+
 pub fn rename_layer(conn: &Connection, layer_id: &str, name: &str) -> AppResult<()> {
     conn.execute(
         "UPDATE map_layers SET name = ?2 WHERE id = ?1",

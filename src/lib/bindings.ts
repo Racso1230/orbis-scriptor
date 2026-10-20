@@ -264,8 +264,12 @@ export const commands = {
 	 *  events (see `models::generate`): `generate-progress` while it runs and
 	 *  `generate-finished` once, with the new map's entity id and stats, or the
 	 *  error text. The map is written in one transaction: all or nothing.
+	 * 
+	 *  With `target_map_entity_id` the terrain goes into that existing map
+	 *  (which must have no background and no objects) instead of a new one;
+	 *  `name` is then ignored.
 	 */
-	generateMap: (params: GeneratorParams, name: string | null) => typedError<string, AppError>(__TAURI_INVOKE("generate_map", { params, name })),
+	generateMap: (params: GeneratorParams, name: string | null, targetMapEntityId: string | null) => typedError<string, AppError>(__TAURI_INVOKE("generate_map", { params, name, targetMapEntityId })),
 	/**  The world's default calendar. */
 	getDefaultCalendar: () => typedError<Calendar, AppError>(__TAURI_INVOKE("get_default_calendar")),
 	listCalendars: () => typedError<Calendar[], AppError>(__TAURI_INVOKE("list_calendars")),

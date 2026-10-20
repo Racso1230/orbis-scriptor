@@ -25,6 +25,7 @@ import { canEditObject, resolveActiveLayer } from "./layers";
 import { MapActionsProvider } from "./map-actions";
 import { useMapActions } from "./map-actions-context";
 import { MapCanvas, type MapCanvasHandle } from "./map-canvas";
+import { MapEmptyState } from "./map-empty-state";
 import { MapSettingsDialog } from "./map-settings-dialog";
 import { useMapToolStore, type MapTool } from "./map-tool-store";
 import { PATH_PRESETS, type PathPreset } from "./object-style";
@@ -358,17 +359,12 @@ function MapEditor({ mapEntityId }: { mapEntityId: string }) {
               onOpenObject={openObject}
             />
           ) : (
-            <div className="flex size-full flex-col items-center justify-center gap-3 text-muted-foreground">
-              <p className="text-sm">This map has no background yet.</p>
-              <div className="flex gap-2">
-                <Button onClick={importBackground} disabled={importing}>
-                  <ImagePlus /> {importing ? "Importing…" : "Import map image"}
-                </Button>
-                <Button variant="outline" onClick={() => setBlankOpen(true)}>
-                  Start blank
-                </Button>
-              </div>
-            </div>
+            <MapEmptyState
+              mapEntityId={mapEntityId}
+              importing={importing}
+              onImport={() => void importBackground()}
+              onStartBlank={() => setBlankOpen(true)}
+            />
           )}
           {hasCanvas && objects.length === 0 && (
             <p className="pointer-events-none absolute inset-x-0 bottom-4 text-center text-sm text-muted-foreground">

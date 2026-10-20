@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { GenerateFinished, GenerateProgress, GeneratorParams } from "@/lib/bindings";
 import { GENERATE_IDLE, type GenerationPhase, type PlacesStats } from "./generate-state";
-import { startGeneration, useGenerateStore } from "./generate-store";
+import { openGenerateWizard, startGeneration, useGenerateStore } from "./generate-store";
 import { defaultParams } from "./wizard-model";
 
 type Handler<T> = (e: { payload: T }) => void;
@@ -78,6 +78,7 @@ describe("startGeneration", () => {
       openCount: 0,
       lastParams: null,
       lastScope: null,
+      targetMapEntityId: null,
     });
   });
 
@@ -88,7 +89,7 @@ describe("startGeneration", () => {
     });
     await startGeneration(PARAMS, "Aria");
     expect(h.order).toEqual(["listen-progress", "listen-finished", "invoke"]);
-    expect(h.generateMap).toHaveBeenCalledWith(PARAMS, "Aria");
+    expect(h.generateMap).toHaveBeenCalledWith(PARAMS, "Aria", null);
     expect(useGenerateStore.getState().lastParams).toEqual(PARAMS);
 
     emit.progress(progress("other", 3));
@@ -113,6 +114,7 @@ describe("startGeneration", () => {
     await startGeneration(params, null);
     expect(h.generateMap).toHaveBeenCalledWith(
       expect.objectContaining({ scope: "places", kingdoms: 3 }),
+      null,
       null,
     );
     expect(useGenerateStore.getState().lastScope).toBe("places");
@@ -175,5 +177,39 @@ describe("startGeneration", () => {
     expect(s.lastParams).toBeNull();
     expect(s.lastScope).toBe("places");
     expect(s.openCount).toBe(1);
+  });
+
+  it("passes the target map to the command and refreshes that map", async () => {
+    h.generateMap.mockResolvedValue({ status: "ok", data: "job-5" });
+    await startGeneration(PARAMS, null, "map-7");
+    expect(h.generateMap).toHaveBeenCalledWith(PARAMS, null, "map-7");
+    expect(useGenerateStore.getState().targetMapEntityId).toBe("map-7");
+    emit.finished({ ...finished("job-5", true), mapEntityId: "map-7" });
+    expect(useGenerateStore.getState().state.result?.mapEntityId).toBe("map-7");
+    // The "maps" prefix covers mapKeys.detail("map-7").
+    expect(h.invalidate).toHaveBeenCalledWith({ queryKey: ["maps"] });
+    expect(h.invalidate).toHaveBeenCalledWith({ queryKey: ["tags"] });
+    expect(h.toastSuccess).toHaveBeenCalledWith("Terrain generated");
+  });
+
+  it("opening with a target remembers it; a plain open clears it", () => {
+    openGenerateWizard({ targetMapEntityId: "map-7" });
+    expect(useGenerateStore.getState()).toMatchObject({
+      dialogOpen: true,
+      targetMapEntityId: "map-7",
+    });
+    useGenerateStore.getState().openDialog();
+    expect(useGenerateStore.getState().targetMapEntityId).toBeNull();
+  });
+
+  it("a running job keeps its target when the dialog is reopened", () => {
+    useGenerateStore.setState({
+      state: { ...GENERATE_IDLE, status: "running" },
+      targetMapEntityId: "map-7",
+    });
+    openGenerateWizard();
+    expect(useGenerateStore.getState().targetMapEntityId).toBe("map-7");
+    openGenerateWizard({ targetMapEntityId: "map-8" });
+    expect(useGenerateStore.getState().targetMapEntityId).toBe("map-7");
   });
 });

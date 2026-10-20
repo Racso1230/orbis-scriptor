@@ -34,7 +34,32 @@ pub type GenerateProgressFn<'a> = &'a mut dyn FnMut(GeneratePhase, u32, u32);
 /// Location entities are created this many at a time per progress step.
 const ENTITIES_PER_STEP: usize = 25;
 
+/// The message shown when generating into a map that is not empty.
+pub const TARGET_NOT_EMPTY: &str = "This map already has content. Generate into a new map instead.";
+
+/// Checks that `entity_id` is a `map` entity whose map has no background
+/// image and no objects, so generated terrain can be written into it.
+/// The writer calls it inside its transaction; the command also calls it up
+/// front so a bad target fails at once instead of after generating.
+pub fn check_target(conn: &Connection, entity_id: &str) -> AppResult<()> {
+    let entity = db::entities::get(conn, entity_id)?
+        .ok_or_else(|| AppError::NotFound(format!("Entity {entity_id} does not exist")))?;
+    if entity.entity_type != "map" {
+        return Err(AppError::Validation(
+            "Terrain can only be generated into a map".into(),
+        ));
+    }
+    let info = db::maps::get_map_by_entity(conn, entity_id)?
+        .ok_or_else(|| AppError::NotFound(format!("No map for entity {entity_id}")))?;
+    if info.background.is_some() || db::maps::count_objects(conn, &info.id)? > 0 {
+        return Err(AppError::Validation(TARGET_NOT_EMPTY.into()));
+    }
+    Ok(())
+}
+
 /// Writes `plan` as a new map called `name` and returns the map's entity id.
+/// With `target` (an existing, empty map entity's id) the plan is written
+/// into that map instead; `name` is then ignored and the map keeps its name.
 ///
 /// Steps: save the PNG (phase `rendering`), then one transaction (phase
 /// `writing`, one step per object batch). If anything fails the transaction
@@ -44,6 +69,7 @@ pub fn write_map(
     assets_dir: &Path,
     plan: &GeneratedMap,
     name: &str,
+    target: Option<&str>,
     on_progress: GenerateProgressFn,
 ) -> AppResult<String> {
     on_progress(GeneratePhase::Rendering, 0, 1);
@@ -51,7 +77,7 @@ pub fn write_map(
     let asset = assets::save_png_bytes(assets_dir, &plan.background_png, &file_name)?;
     on_progress(GeneratePhase::Rendering, 1, 1);
 
-    match write_rows(conn, assets_dir, plan, name, &asset, on_progress) {
+    match write_rows(conn, assets_dir, plan, name, target, &asset, on_progress) {
         Ok(entity_id) => {
             // The thumbnail is only a nicety, made after the commit.
             assets::spawn_thumbnail(assets_dir.to_path_buf(), asset.id, asset.mime);
@@ -72,6 +98,7 @@ fn write_rows(
     assets_dir: &Path,
     plan: &GeneratedMap,
     name: &str,
+    target: Option<&str>,
     asset: &Asset,
     on_progress: GenerateProgressFn,
 ) -> AppResult<String> {
@@ -90,23 +117,33 @@ fn write_rows(
     // without commit, and SQLite undoes everything written so far.
     let tx = conn.unchecked_transaction()?;
 
-    let look = MapBackground {
-        kind: BackgroundKind::Plain,
-        color: None,
+    let entity_id = match target {
+        // Checked again here, inside the transaction, in case the map got
+        // content while the plan was being generated.
+        Some(id) => {
+            check_target(&tx, id)?;
+            id.to_owned()
+        }
+        None => {
+            let look = MapBackground {
+                kind: BackgroundKind::Plain,
+                color: None,
+            };
+            entities::create_blank_map_in(&tx, name, plan.width, plan.height, &look)?.id
+        }
     };
-    let entity = entities::create_blank_map_in(&tx, name, plan.width, plan.height, &look)?;
     maps::register_asset(&tx, asset)?;
     // The image may be smaller than the map (very large maps); keep the
     // map's own size and let the view stretch the image.
     maps::set_background_sized(
         &tx,
         assets_dir,
-        &entity.id,
+        &entity_id,
         &asset.id,
         plan.width,
         plan.height,
     )?;
-    let default_layer = maps::get_map(&tx, assets_dir, &entity.id)?
+    let default_layer = maps::get_map(&tx, assets_dir, &entity_id)?
         .layers
         .into_iter()
         .next();
@@ -137,8 +174,18 @@ fn write_rows(
     for (index, layer) in plan.layers.iter().enumerate() {
         // The first plan layer reuses the "Default" layer the map came with.
         let layer_id = match (index, &default_layer) {
-            (0, Some(existing)) => maps::rename_layer(&tx, &existing.id, &layer.name)?.id,
-            _ => maps::create_layer(&tx, &entity.id, &layer.name)?.id,
+            (0, Some(existing)) => {
+                // An existing map's first layer may have been hidden or
+                // locked by the user; generated objects need it writable.
+                if existing.locked {
+                    maps::set_layer_locked(&tx, &existing.id, false)?;
+                }
+                if !existing.visible {
+                    maps::set_layer_visibility(&tx, &existing.id, true)?;
+                }
+                maps::rename_layer(&tx, &existing.id, &layer.name)?.id
+            }
+            _ => maps::create_layer(&tx, &entity_id, &layer.name)?.id,
         };
         for batch in layer.batches() {
             let ops: Vec<MapOp> = batch
@@ -167,23 +214,35 @@ fn write_rows(
                 // Collecting into `AppResult<Vec<_>>` stops at the first
                 // error; `?` then returns it.
                 .collect::<AppResult<_>>()?;
-            maps::apply_ops_in(&tx, &entity.id, ops)?;
+            maps::apply_ops_in(&tx, &entity_id, ops)?;
             done += 1;
             on_progress(GeneratePhase::Writing, done, total);
         }
     }
 
-    tags::apply_entity_tags(&tx, &entity.id, &names, &mut cache)?;
+    if target.is_some() {
+        // An existing map keeps its own tags; `generated` is added to them.
+        let mut all = db::tags::names_for_entity(&tx, &entity_id)?;
+        all.extend(names.iter().cloned());
+        // `normalize_all` also drops duplicates. If the map is already at
+        // the tag limit, it keeps the tags it has.
+        let all =
+            tags::normalize_all(&all).or_else(|_| db::tags::names_for_entity(&tx, &entity_id))?;
+        tags::apply_entity_tags(&tx, &entity_id, &all, &mut cache)?;
+        db::entities::touch(&tx, &entity_id, &maps::now())?;
+    } else {
+        tags::apply_entity_tags(&tx, &entity_id, &names, &mut cache)?;
+    }
     // The search index has a tags column, so re-index after tagging.
-    search::reindex_entity(&tx, &entity.id)?;
+    search::reindex_entity(&tx, &entity_id)?;
 
     db::world_settings::set(&tx, SETTING_VERSION, &plan.generator_version.to_string())?;
     db::world_settings::set(&tx, SETTING_PARAMS, &serde_json::to_string(&plan.params)?)?;
-    db::world_settings::set(&tx, SETTING_LAST_MAP, &entity.id)?;
+    db::world_settings::set(&tx, SETTING_LAST_MAP, &entity_id)?;
 
     tx.commit()?;
     on_progress(GeneratePhase::Writing, total, total);
-    Ok(entity.id)
+    Ok(entity_id)
 }
 
 /// Creates, tags and fills in one `location` entity per settlement (inside
@@ -286,6 +345,7 @@ mod tests {
             &w.path.join(ASSETS_DIR),
             plan,
             "Generated map 1",
+            None,
             &mut quiet,
         )
     }
@@ -299,7 +359,15 @@ mod tests {
 
         let mut phases: Vec<(GeneratePhase, u32, u32)> = Vec::new();
         let mut record = |p: GeneratePhase, d: u32, t: u32| phases.push((p, d, t));
-        let id = write_map(&w.conn, &assets_dir, plan, "Generated map 1", &mut record).unwrap();
+        let id = write_map(
+            &w.conn,
+            &assets_dir,
+            plan,
+            "Generated map 1",
+            None,
+            &mut record,
+        )
+        .unwrap();
 
         let data = maps::get_map(&w.conn, &assets_dir, &id).unwrap();
         let bg = data.map.background.as_ref().expect("background set");
@@ -386,7 +454,7 @@ mod tests {
         let not_a_dir = tmp.path().join("blocked");
         fs::write(&not_a_dir, "x").unwrap();
         let mut quiet = |_: GeneratePhase, _: u32, _: u32| {};
-        let result = write_map(&w.conn, &not_a_dir, plan(), "Map", &mut quiet);
+        let result = write_map(&w.conn, &not_a_dir, plan(), "Map", None, &mut quiet);
         assert!(result.is_err());
         assert_eq!(count(&w.conn, "entities"), before);
         assert_eq!(count(&w.conn, "maps"), 0);
@@ -431,7 +499,7 @@ mod tests {
 
         let mut last = (GeneratePhase::Rendering, 0, 0);
         let mut record = |p: GeneratePhase, d: u32, t: u32| last = (p, d, t);
-        let id = write_map(&w.conn, &assets_dir, plan, "Places", &mut record).unwrap();
+        let id = write_map(&w.conn, &assets_dir, plan, "Places", None, &mut record).unwrap();
         assert_eq!(last.0, GeneratePhase::Writing);
         assert_eq!(last.1, last.2);
 
@@ -520,5 +588,184 @@ mod tests {
         );
         assert_eq!(count(&w.conn, "map_objects"), 0);
         assert_eq!(png_files(&w.path.join(ASSETS_DIR)), 0);
+    }
+    /// A new, empty `map` entity (no background, one default layer).
+    fn empty_map(w: &WorldHandle, name: &str) -> String {
+        entities::create(
+            &w.conn,
+            NewEntity {
+                entity_type: "map".into(),
+                name: name.into(),
+            },
+        )
+        .unwrap()
+        .id
+    }
+
+    fn write_into(w: &WorldHandle, plan: &GeneratedMap, target: &str) -> AppResult<String> {
+        let mut quiet = |_: GeneratePhase, _: u32, _: u32| {};
+        write_map(
+            &w.conn,
+            &w.path.join(ASSETS_DIR),
+            plan,
+            "ignored name",
+            Some(target),
+            &mut quiet,
+        )
+    }
+
+    #[test]
+    fn writes_into_an_existing_empty_map() {
+        let tmp = tempfile::tempdir().unwrap();
+        let w = new_world(tmp.path());
+        let assets_dir = w.path.join(ASSETS_DIR);
+        let target = empty_map(&w, "Old Kingdom");
+        tags::set_entity_tags(&w.conn, &target, &["realm".to_owned()]).unwrap();
+        let maps_before = count(&w.conn, "maps");
+        let entities_before = count(&w.conn, "entities");
+        let plan = places_plan();
+
+        let id = write_into(&w, plan, &target).unwrap();
+        assert_eq!(id, target);
+        // No new map entity; only the settlement locations were added.
+        assert_eq!(count(&w.conn, "maps"), maps_before);
+        let settlements = plan.places.as_ref().unwrap().settlements.len() as i64;
+        assert_eq!(count(&w.conn, "entities"), entities_before + settlements);
+
+        let data = maps::get_map(&w.conn, &assets_dir, &id).unwrap();
+        assert_eq!(data.map.name, "Old Kingdom");
+        let bg = data.map.background.as_ref().expect("background set");
+        assert!(Path::new(&bg.path).is_file());
+        assert_eq!((data.map.width, data.map.height), (800, 600));
+        let names: Vec<&str> = data.layers.iter().map(|l| l.name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                LAYER_TERRAIN,
+                LAYER_RIVERS,
+                LAYER_ROADS,
+                LAYER_FEATURES,
+                LAYER_PLACES
+            ]
+        );
+        let planned: usize = plan.layers.iter().map(|l| l.objects.len()).sum();
+        assert_eq!(data.objects.len(), planned);
+
+        // Same result as writing a fresh map from the same plan.
+        let fresh = write(&w, plan).unwrap();
+        let fresh_data = maps::get_map(&w.conn, &assets_dir, &fresh).unwrap();
+        assert_eq!(fresh_data.objects.len(), data.objects.len());
+        let geometries = |d: &crate::models::map::MapData| -> Vec<MapGeometry> {
+            d.objects.iter().map(|o| o.geometry.clone()).collect()
+        };
+        assert_eq!(geometries(&fresh_data), geometries(&data));
+
+        let mut tag_names = db::tags::names_for_entity(&w.conn, &id).unwrap();
+        tag_names.sort();
+        assert_eq!(tag_names, [TAG_GENERATED, "realm"]);
+        let last = db::world_settings::get(&w.conn, SETTING_LAST_MAP).unwrap();
+        assert_eq!(last.as_deref(), Some(fresh.as_str()));
+    }
+
+    #[test]
+    fn a_map_without_layers_gets_a_terrain_layer() {
+        let tmp = tempfile::tempdir().unwrap();
+        let w = new_world(tmp.path());
+        let target = empty_map(&w, "Bare");
+        let info = db::maps::get_map_by_entity(&w.conn, &target)
+            .unwrap()
+            .unwrap();
+        for layer in db::maps::list_layers(&w.conn, &info.id).unwrap() {
+            db::maps::delete_layer(&w.conn, &layer.id).unwrap();
+        }
+        write_into(&w, plan(), &target).unwrap();
+        let data = maps::get_map(&w.conn, &w.path.join(ASSETS_DIR), &target).unwrap();
+        let names: Vec<&str> = data.layers.iter().map(|l| l.name.as_str()).collect();
+        assert_eq!(names, [LAYER_TERRAIN, LAYER_RIVERS, LAYER_FEATURES]);
+        let setting = db::world_settings::get(&w.conn, SETTING_LAST_MAP).unwrap();
+        assert_eq!(setting.as_deref(), Some(target.as_str()));
+    }
+
+    #[test]
+    fn refuses_a_target_with_content() {
+        let tmp = tempfile::tempdir().unwrap();
+        let w = new_world(tmp.path());
+        let assets_dir = w.path.join(ASSETS_DIR);
+
+        // A map with an object on it.
+        let with_object = empty_map(&w, "Drawn");
+        let layer_id = maps::get_map(&w.conn, &assets_dir, &with_object)
+            .unwrap()
+            .layers[0]
+            .id
+            .clone();
+        maps::create_object(
+            &w.conn,
+            NewMapObject {
+                id: None,
+                layer_id,
+                geometry: MapGeometry::Pin { x: 5.0, y: 5.0 },
+                style: None,
+                entity_id: None,
+                created_at: None,
+            },
+        )
+        .unwrap();
+
+        // A map with a background image (from an earlier generation).
+        let with_image = write(&w, plan()).unwrap();
+
+        // Not a map at all.
+        let character = entities::create(
+            &w.conn,
+            NewEntity {
+                entity_type: "character".into(),
+                name: "Ana".into(),
+            },
+        )
+        .unwrap()
+        .id;
+
+        let before = (
+            count(&w.conn, "entities"),
+            count(&w.conn, "map_layers"),
+            count(&w.conn, "map_objects"),
+            count(&w.conn, "assets"),
+            png_files(&assets_dir),
+        );
+        for target in [&with_object, &with_image] {
+            let err = write_into(&w, places_plan(), target).unwrap_err();
+            match err {
+                AppError::Validation(msg) => assert_eq!(msg, TARGET_NOT_EMPTY),
+                other => panic!("{other:?}"),
+            }
+        }
+        assert!(matches!(
+            write_into(&w, plan(), &character),
+            Err(AppError::Validation(_))
+        ));
+        assert!(matches!(
+            write_into(&w, plan(), "missing"),
+            Err(AppError::NotFound(_))
+        ));
+        let after = (
+            count(&w.conn, "entities"),
+            count(&w.conn, "map_layers"),
+            count(&w.conn, "map_objects"),
+            count(&w.conn, "assets"),
+            png_files(&assets_dir),
+        );
+        assert_eq!(before, after);
+        assert!(
+            db::tags::names_for_entity(&w.conn, &with_object)
+                .unwrap()
+                .is_empty()
+        );
+        let drawn = maps::get_map(&w.conn, &assets_dir, &with_object).unwrap();
+        assert!(drawn.map.background.is_none());
+        assert_eq!(
+            drawn.layers[0].name,
+            crate::services::maps::DEFAULT_LAYER_NAME
+        );
     }
 }

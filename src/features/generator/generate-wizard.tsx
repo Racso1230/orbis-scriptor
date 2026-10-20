@@ -41,7 +41,14 @@ import {
   usesKingdoms,
 } from "./wizard-model";
 
-/** Mounted once in the world layout; opened from the gear menu, the palette and the welcome page. */
+/** Title of the wizard when it generates into an existing (empty) map. */
+export const TARGET_TITLE = "Generate terrain for this map";
+
+/**
+ * Mounted once in the world layout; opened from the gear menu, the palette,
+ * the welcome page and an empty map's "Generate terrain…" button (which sets
+ * `targetMapEntityId`, so the terrain goes into that map).
+ */
 export function GenerateWizard() {
   const open = useGenerateStore((s) => s.dialogOpen);
   const setOpen = useGenerateStore((s) => s.setDialogOpen);
@@ -92,6 +99,8 @@ function SettingsView({ onClose }: { onClose: () => void }) {
   const [heightText, setHeightText] = useState(() => String(base.height));
   const [kingdomsText, setKingdomsText] = useState(() => String(base.kingdoms));
   const [name, setName] = useState("");
+  // Read once: the target only changes when the wizard is opened afresh (new key).
+  const [target] = useState(() => useGenerateStore.getState().targetMapEntityId);
 
   const seed = parseSeed(seedText);
   const preset = SIZE_PRESETS.find((p) => p.id === sizeChoice);
@@ -138,29 +147,34 @@ function SettingsView({ onClose }: { onClose: () => void }) {
 
   function generate() {
     if (problem) return;
-    void startGeneration(params, name.trim() || null);
+    // Generating into an existing map keeps that map's name.
+    void startGeneration(params, target ? null : name.trim() || null, target);
   }
 
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Generate map</DialogTitle>
+        <DialogTitle>{target ? TARGET_TITLE : "Generate map"}</DialogTitle>
         <DialogDescription>
-          Creates a new map with land, sea, rivers and biome stamps (and, with places, settlements
-          and roads). The same seed and settings always give the same map.
+          {target
+            ? "Fills this map with land, sea, rivers and biome stamps (and, with places, settlements and roads)."
+            : "Creates a new map with land, sea, rivers and biome stamps (and, with places, settlements and roads)."}{" "}
+          The same seed and settings always give the same map.
         </DialogDescription>
       </DialogHeader>
 
       <div className="grid gap-6 sm:grid-cols-[1fr_minmax(0,384px)]">
         <div className="flex flex-col gap-4">
-          <Field label="Map name" htmlFor="generate-name">
-            <Input
-              id="generate-name"
-              value={name}
-              placeholder={seed === null ? "Generated map" : `Generated map ${seed}`}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </Field>
+          {!target && (
+            <Field label="Map name" htmlFor="generate-name">
+              <Input
+                id="generate-name"
+                value={name}
+                placeholder={seed === null ? "Generated map" : `Generated map ${seed}`}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </Field>
+          )}
 
           <Field label="Seed" htmlFor="generate-seed">
             <div className="flex gap-2">
@@ -399,6 +413,8 @@ function Stat({ id, label, value }: { id?: string; label: string; value: ReactNo
 
 function RunView({ onClose, onBack }: { onClose: () => void; onBack: () => void }) {
   const run = useGenerateStore((s) => s.state);
+  // The running (or finished) job's target; `null` when it made a new map.
+  const target = useGenerateStore((s) => s.targetMapEntityId);
   const openEntity = useOpenEntity();
   const fraction = generateFraction(run);
   const stats = run.result?.stats;
@@ -415,7 +431,7 @@ function RunView({ onClose, onBack }: { onClose: () => void; onBack: () => void 
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Generate map</DialogTitle>
+        <DialogTitle>{target ? TARGET_TITLE : "Generate map"}</DialogTitle>
         <DialogDescription>
           {running
             ? "Generating. You can hide this window; the map keeps generating."
@@ -488,15 +504,20 @@ function RunView({ onClose, onBack }: { onClose: () => void; onBack: () => void 
       </div>
 
       <DialogFooter>
-        {!running && (
+        {/* A filled target map can't take a second generation, so no "Generate another". */}
+        {!running && !(target && run.status === "finished") && (
           <Button variant="outline" onClick={onBack}>
             {run.status === "finished" ? "Generate another" : "Back"}
           </Button>
         )}
-        <Button variant={run.status === "finished" ? "outline" : "default"} onClick={onClose}>
+        <Button
+          variant={run.status === "finished" && !target ? "outline" : "default"}
+          onClick={onClose}
+        >
           {running ? "Hide" : "Close"}
         </Button>
-        {run.status === "finished" && (
+        {/* With a target we are already on the map, so there is nothing to open. */}
+        {run.status === "finished" && !target && (
           <Button id="generate-open-map" onClick={openMap}>
             Open map
           </Button>

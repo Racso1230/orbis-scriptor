@@ -10,6 +10,10 @@ import {
   type GenerateState,
 } from "./generate-state";
 
+export interface OpenGenerateOptions {
+  targetMapEntityId?: string | null;
+}
+
 interface GenerateStore {
   state: GenerateState;
   dialogOpen: boolean;
@@ -25,9 +29,18 @@ interface GenerateStore {
    * open, so someone who generates places keeps getting places by default.
    */
   lastScope: GenerationScope | null;
+  /**
+   * The existing (empty) map entity the wizard generates into, or `null` for
+   * "create a new map". While a job runs it is the running job's target.
+   */
+  targetMapEntityId: string | null;
   setDialogOpen: (open: boolean) => void;
-  /** Opens the wizard; a finished or failed job is cleared, a running one is kept. */
-  openDialog: () => void;
+  /**
+   * Opens the wizard; a finished or failed job is cleared, a running one is
+   * kept (together with its target). Pass `targetMapEntityId` to generate
+   * terrain into that map instead of creating a new one.
+   */
+  openDialog: (options?: OpenGenerateOptions) => void;
   dispatch: (action: GenerateAction) => void;
 }
 
@@ -37,10 +50,13 @@ export const useGenerateStore = create<GenerateStore>()((set) => ({
   openCount: 0,
   lastParams: null,
   lastScope: null,
+  targetMapEntityId: null,
   setDialogOpen: (dialogOpen) => set({ dialogOpen }),
-  openDialog: () =>
+  openDialog: (options) =>
     set((s) => ({
       dialogOpen: true,
+      targetMapEntityId:
+        s.state.status === "running" ? s.targetMapEntityId : (options?.targetMapEntityId ?? null),
       lastParams: s.state.status === "running" ? s.lastParams : null,
       openCount: s.state.status === "running" ? s.openCount : s.openCount + 1,
       state: s.state.status === "running" ? s.state : GENERATE_IDLE,
@@ -48,11 +64,18 @@ export const useGenerateStore = create<GenerateStore>()((set) => ({
   dispatch: (action) => set((s) => ({ state: generateReducer(s.state, action) })),
 }));
 
+/** Opens the generate wizard, optionally aimed at an existing empty map. */
+export function openGenerateWizard(options?: OpenGenerateOptions) {
+  useGenerateStore.getState().openDialog(options);
+}
+
 type Unlisten = () => void;
 
 /**
  * A new map changes the entity list (generated locations show in the sidebar),
  * tags (`generated`), search (settlements are found by name) and the maps.
+ * The `["maps"]` prefix also covers `mapKeys.detail(target)`, so a map that
+ * got generated terrain re-renders with its new background and layers.
  */
 function invalidateAfterGenerate() {
   return Promise.all(
@@ -69,12 +92,19 @@ function invalidateAfterGenerate() {
  * The listeners are registered BEFORE the command is invoked (the backend may
  * report progress, even finish, before the command returns) and removed as
  * soon as the job has finished or failed.
+ *
+ * With `targetMapEntityId` the terrain is written into that existing, empty
+ * map (`name` is then ignored by the backend).
  */
-export async function startGeneration(params: GeneratorParams, name: string | null): Promise<void> {
+export async function startGeneration(
+  params: GeneratorParams,
+  name: string | null,
+  targetMapEntityId: string | null = null,
+): Promise<void> {
   const { dispatch } = useGenerateStore.getState();
   if (useGenerateStore.getState().state.status === "running") return;
 
-  useGenerateStore.setState({ lastParams: params, lastScope: params.scope });
+  useGenerateStore.setState({ lastParams: params, lastScope: params.scope, targetMapEntityId });
   dispatch({ type: "begin", scope: params.scope });
   const unlisteners: Unlisten[] = [];
   let cleaned = false;
@@ -92,7 +122,7 @@ export async function startGeneration(params: GeneratorParams, name: string | nu
       announced = true;
       cleanup();
       void invalidateAfterGenerate();
-      toast.success("Map generated");
+      toast.success(targetMapEntityId ? "Terrain generated" : "Map generated");
     } else if (state.status === "failed") {
       announced = true;
       cleanup();
@@ -109,7 +139,7 @@ export async function startGeneration(params: GeneratorParams, name: string | nu
       await events.generateProgress.listen((e) => send({ type: "progress", event: e.payload })),
       await events.generateFinished.listen((e) => send({ type: "finished", event: e.payload })),
     );
-    const jobId = await unwrap(commands.generateMap(params, name));
+    const jobId = await unwrap(commands.generateMap(params, name, targetMapEntityId ?? null));
     send({ type: "started", jobId });
   } catch (error) {
     cleanup();

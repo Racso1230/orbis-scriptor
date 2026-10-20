@@ -66,11 +66,23 @@ fn checked_name(params: &GeneratorParams, name: Option<&str>) -> AppResult<Strin
     })
 }
 
+/// A missing or blank target id means "make a new map".
+fn checked_target(target: Option<&str>) -> Option<String> {
+    target
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(str::to_owned)
+}
+
 /// Starts generating a terrain map into the open world and returns a job id
 /// at once. The work runs on a background thread and reports through two
 /// events (see `models::generate`): `generate-progress` while it runs and
 /// `generate-finished` once, with the new map's entity id and stats, or the
 /// error text. The map is written in one transaction: all or nothing.
+///
+/// With `target_map_entity_id` the terrain goes into that existing map
+/// (which must have no background and no objects) instead of a new one;
+/// `name` is then ignored.
 #[tauri::command]
 #[specta::specta]
 pub fn generate_map(
@@ -78,11 +90,19 @@ pub fn generate_map(
     state: State<'_, AppState>,
     params: GeneratorParams,
     name: Option<String>,
+    target_map_entity_id: Option<String>,
 ) -> AppResult<String> {
     let name = checked_name(&params, name.as_deref())?;
+    let target = checked_target(target_map_entity_id.as_deref());
     // Copy the folder path out; the lock is released straight away, so the
-    // app stays usable while the map is generated.
-    let world_dir = state.with_world(|w| Ok(w.path.clone()))?;
+    // app stays usable while the map is generated. A bad target is refused
+    // here at once (the writer checks it again in its transaction).
+    let world_dir = state.with_world(|w| {
+        if let Some(id) = &target {
+            writer::check_target(&w.conn, id)?;
+        }
+        Ok(w.path.clone())
+    })?;
     if GENERATE_RUNNING.swap(true, Ordering::SeqCst) {
         return Err(AppError::Validation(
             "A map is already being generated".into(),
@@ -115,6 +135,7 @@ pub fn generate_map(
                 &world_dir.join(ASSETS_DIR),
                 &plan,
                 &name,
+                target.as_deref(),
                 &mut on_progress,
             )?;
             Ok((id, plan))
@@ -185,6 +206,28 @@ mod tests {
             ..GeneratorParams::default()
         };
         assert!(checked_name(&places, None).is_ok());
+    }
+
+    #[test]
+    fn blank_targets_mean_a_new_map() {
+        assert_eq!(checked_target(None), None);
+        assert_eq!(checked_target(Some("  ")), None);
+        assert_eq!(checked_target(Some(" m1 ")).as_deref(), Some("m1"));
+    }
+
+    #[test]
+    fn the_command_takes_a_target_map_argument() {
+        // Compile-time check of the command's shape: `params, name,
+        // target_map_entity_id`, in that order (the TS binding follows it).
+        // `for<'a>` says "for any lifetime of the `State` borrow".
+        type Shape = for<'a> fn(
+            AppHandle,
+            State<'a, AppState>,
+            GeneratorParams,
+            Option<String>,
+            Option<String>,
+        ) -> AppResult<String>;
+        let _shape: Shape = generate_map;
     }
 
     #[test]

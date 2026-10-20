@@ -73,7 +73,7 @@ export function DebugMenu() {
           <DropdownMenuItem onSelect={openImport}>
             <FileUp /> Import Markdown / Obsidian vault…
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={openGenerate}>
+          <DropdownMenuItem onSelect={() => openGenerate()}>
             <Mountain /> Generate map…
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={openExport}>
