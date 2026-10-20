@@ -72,16 +72,29 @@ export function openGenerateWizard(options?: OpenGenerateOptions) {
 type Unlisten = () => void;
 
 /**
- * A new map changes the entity list (generated locations show in the sidebar),
- * tags (`generated`), search (settlements are found by name) and the maps.
- * The `["maps"]` prefix also covers `mapKeys.detail(target)`, so a map that
- * got generated terrain re-renders with its new background and layers.
+ * Query prefixes a generation can change. A new map changes the entity list
+ * (generated locations, factions and characters show in the sidebar), tags
+ * (`generated`), search (found by name) and the maps. The `["maps"]` prefix
+ * also covers `mapKeys.detail(target)`, so a map that got generated terrain
+ * re-renders with its new background and layers. History adds timeline events
+ * (`eventKeys.all`), relationships and the graph (`relationshipKeys.all`,
+ * `graphKeys.all`), lore documents (`documentKeys`) and their backlinks.
  */
+export const GENERATE_INVALIDATED_KEYS: readonly (readonly string[])[] = [
+  ["entities"],
+  ["tags"],
+  ["search"],
+  ["maps"],
+  ["events"],
+  ["relationships"],
+  ["graph"],
+  ["documents"],
+  ["backlinks"],
+];
+
 function invalidateAfterGenerate() {
   return Promise.all(
-    [["entities"], ["tags"], ["search"], ["maps"]].map((queryKey) =>
-      queryClient.invalidateQueries({ queryKey }),
-    ),
+    GENERATE_INVALIDATED_KEYS.map((queryKey) => queryClient.invalidateQueries({ queryKey })),
   );
 }
 

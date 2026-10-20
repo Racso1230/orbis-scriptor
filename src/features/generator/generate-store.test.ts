@@ -108,6 +108,43 @@ describe("startGeneration", () => {
     expect(h.toastSuccess).toHaveBeenCalled();
   });
 
+  it("sends a history job and refreshes events, relationships, graph and lore", async () => {
+    h.generateMap.mockResolvedValue({ status: "ok", data: "job-5" });
+    const params: GeneratorParams = { ...PARAMS, scope: "history", kingdoms: 4 };
+    await startGeneration(params, null);
+    expect(h.generateMap).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: "history", kingdoms: 4 }),
+      null,
+      null,
+    );
+    // `as GenerateProgress`: "history" is new in Phase 14c bindings.
+    emit.progress({
+      jobId: "job-5",
+      phase: "history" as GenerationPhase,
+      done: 1,
+      total: 2,
+    } as GenerateProgress);
+    expect(useGenerateStore.getState().state).toMatchObject({
+      scope: "history",
+      phase: "history",
+    });
+    emit.finished(finished("job-5", true));
+    expect(useGenerateStore.getState().state.status).toBe("finished");
+    for (const key of [
+      ["entities"],
+      ["tags"],
+      ["search"],
+      ["maps"],
+      ["events"],
+      ["relationships"],
+      ["graph"],
+      ["documents"],
+      ["backlinks"],
+    ]) {
+      expect(h.invalidate).toHaveBeenCalledWith({ queryKey: key });
+    }
+  });
+
   it("sends a places job as is and follows its placing progress", async () => {
     h.generateMap.mockResolvedValue({ status: "ok", data: "job-4" });
     const params: GeneratorParams = { ...PARAMS, scope: "places", kingdoms: 3 };

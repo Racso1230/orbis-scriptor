@@ -7,17 +7,26 @@ import type {
 } from "@/lib/bindings";
 
 /**
- * Every phase the backend can report. `"placing"` (Phase 14b) is added here
- * as well so this compiles before and after the bindings are regenerated
- * (a union with a duplicate member is the same union).
+ * Every phase the backend can report. `"placing"` (Phase 14b) and
+ * `"history"` (Phase 14c) are added here as well so this compiles before and
+ * after the bindings are regenerated (a union with a duplicate member is the
+ * same union).
  */
-export type GenerationPhase = GeneratePhase | "placing";
+export type GenerationPhase = GeneratePhase | "placing" | "history";
 
 /**
- * Stats including the Phase 14b counters. Optional here so it compiles
- * against older bindings; once regenerated they are plain numbers.
+ * Stats including the Phase 14b (places) and 14c (history) counters. Optional
+ * here so it compiles against older bindings; once regenerated they are plain
+ * numbers (0 when the scope did not generate them).
  */
-export type PlacesStats = GenerationStats & { settlements?: number; roads?: number };
+export type PlacesStats = GenerationStats & {
+  settlements?: number;
+  roads?: number;
+  kingdoms?: number;
+  characters?: number;
+  events?: number;
+  documents?: number;
+};
 
 /** What the wizard shows while and after a map generation. `jobId` is `null` until the command answered. */
 export interface GenerateState {
@@ -120,6 +129,7 @@ const MAP_ONLY_SPAN: Record<GenerationPhase, Span> = {
   generating: [0, 0.5],
   // Not sent for map-only jobs; listed so every phase has a span.
   placing: [0.5, 0.5],
+  history: [0.5, 0.5],
   rendering: [0.5, 0.6],
   writing: [0.6, 1],
 };
@@ -128,14 +138,31 @@ const MAP_ONLY_SPAN: Record<GenerationPhase, Span> = {
 const PLACES_SPAN: Record<GenerationPhase, Span> = {
   generating: [0, 0.35],
   placing: [0.35, 0.5],
+  // Not sent for places jobs.
+  history: [0.5, 0.5],
   rendering: [0.5, 0.6],
   writing: [0.6, 1],
 };
 
+/** With history: kingdoms, dynasties and events are worked out after placing. */
+const HISTORY_SPAN: Record<GenerationPhase, Span> = {
+  generating: [0, 0.3],
+  placing: [0.3, 0.42],
+  history: [0.42, 0.52],
+  rendering: [0.52, 0.6],
+  writing: [0.6, 1],
+};
+
+const SPANS: Record<GenerationScope, Record<GenerationPhase, Span>> = {
+  mapOnly: MAP_ONLY_SPAN,
+  places: PLACES_SPAN,
+  history: HISTORY_SPAN,
+};
+
 /** The bar segment of `phase` for a job of `scope`. */
 export function phaseSpan(scope: GenerationScope, phase: GenerationPhase): Span {
-  const spans = scope === "mapOnly" ? MAP_ONLY_SPAN : PLACES_SPAN;
-  // An unknown phase from a newer backend keeps the bar at its start rather than crashing.
+  // An unknown scope or phase from a newer backend keeps the bar at its start rather than crashing.
+  const spans = SPANS[scope] ?? PLACES_SPAN;
   return spans[phase] ?? [0, 0];
 }
 
@@ -151,6 +178,7 @@ export function generateFraction(state: GenerateState): number {
 export const GENERATE_PHASE_LABELS: Record<GenerationPhase, string> = {
   generating: "Shaping land, rivers and biomes…",
   placing: "Placing settlements and roads…",
+  history: "Writing kingdoms, dynasties and history…",
   rendering: "Saving the background image…",
   writing: "Writing the map to the world…",
 };

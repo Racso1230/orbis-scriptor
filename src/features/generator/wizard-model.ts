@@ -44,13 +44,16 @@ export const CLIMATES: { value: Climate; label: string }[] = [
   { value: "volcanic", label: "Volcanic" },
 ];
 
-export const SCOPES: { value: GenerationScope; label: string; disabled?: boolean }[] = [
+export const SCOPES: { value: GenerationScope; label: string }[] = [
   { value: "mapOnly", label: "Map only" },
   { value: "places", label: "Map + places" },
-  { value: "history", label: "Map + places + history", disabled: true },
+  { value: "history", label: "Map + places + history" },
 ];
 
-/** Kingdoms only matter once places are generated (they set the number of capitals). */
+/**
+ * Kingdoms only matter once places are generated: they set the number of
+ * capitals (places) and of realms with a ruling house and history (history).
+ */
 export function usesKingdoms(scope: GenerationScope): boolean {
   return scope !== "mapOnly";
 }
@@ -124,11 +127,10 @@ export function paramsProblem(params: GeneratorParams): string | null {
   if (!inRange(params.landPercent, LAND_MIN, LAND_MAX)) {
     return `Land must be between ${LAND_MIN} and ${LAND_MAX} percent`;
   }
-  // Rust checks the kingdoms for every scope; with places they set the number of capitals.
+  // Rust checks the kingdoms for every scope; with places and history they set the number of realms.
   if (!Number.isInteger(params.kingdoms) || !inRange(params.kingdoms, KINGDOMS_MIN, KINGDOMS_MAX)) {
     return `Number of kingdoms must be between ${KINGDOMS_MIN} and ${KINGDOMS_MAX}`;
   }
-  if (params.scope === "history") return "History generation arrives in Phase 14c";
   if (!inRange(params.temperature, -1, 1)) return "Temperature must be between -1 and 1";
   if (!inRange(params.rainfall, -1, 1)) return "Rainfall must be between -1 and 1";
   return null;

@@ -68,26 +68,24 @@ describe("wizard model", () => {
     expect(paramsProblem({ ...ok, seed: SEED_MAX + 1 })).toMatch(/Seed/);
   });
 
-  it("offers map only and places, with history listed but disabled", () => {
-    expect(SCOPES.map((s) => [s.value, Boolean(s.disabled)])).toEqual([
-      ["mapOnly", false],
-      ["places", false],
-      ["history", true],
-    ]);
+  it("offers map only, places and history, all enabled", () => {
+    expect(SCOPES.map((s) => s.value)).toEqual(["mapOnly", "places", "history"]);
+    expect(SCOPES.every((s) => !("disabled" in s))).toBe(true);
     expect(defaultParams(1, "places").scope).toBe("places");
     expect(usesKingdoms("mapOnly")).toBe(false);
     expect(usesKingdoms("places")).toBe(true);
+    expect(usesKingdoms("history")).toBe(true);
   });
 
-  it("validates kingdoms 1-12 for places and rejects history", () => {
-    const places = defaultParams(1, "places");
-    expect(paramsProblem({ ...places, kingdoms: 1 })).toBeNull();
-    expect(paramsProblem({ ...places, kingdoms: 12 })).toBeNull();
-    expect(paramsProblem({ ...places, kingdoms: 0 })).toMatch(/kingdoms must be between 1 and 12/);
-    expect(paramsProblem({ ...places, kingdoms: 13 })).toMatch(/kingdoms/);
-    expect(paramsProblem({ ...places, kingdoms: 2.5 })).toMatch(/kingdoms/);
-    expect(paramsProblem({ ...places, kingdoms: Number.NaN })).toMatch(/kingdoms/);
-    expect(paramsProblem({ ...places, scope: "history" })).toMatch(/14c/);
+  it.each(["places", "history"] as const)("validates kingdoms 1-12 for %s", (scope) => {
+    const params = defaultParams(1, scope);
+    expect(paramsProblem(params)).toBeNull();
+    expect(paramsProblem({ ...params, kingdoms: 1 })).toBeNull();
+    expect(paramsProblem({ ...params, kingdoms: 12 })).toBeNull();
+    expect(paramsProblem({ ...params, kingdoms: 0 })).toMatch(/kingdoms must be between 1 and 12/);
+    expect(paramsProblem({ ...params, kingdoms: 13 })).toMatch(/kingdoms/);
+    expect(paramsProblem({ ...params, kingdoms: 2.5 })).toMatch(/kingdoms/);
+    expect(paramsProblem({ ...params, kingdoms: Number.NaN })).toMatch(/kingdoms/);
   });
 
   it("formats slider offsets", () => {

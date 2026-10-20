@@ -80,6 +80,34 @@ describe("generateReducer", () => {
     expect(run([{ type: "begin" }]).scope).toBe("mapOnly");
   });
 
+  it("follows the history phase of a history job", () => {
+    const s = run([
+      { type: "begin", scope: "history" },
+      { type: "started", jobId: "a" },
+      progress("a", "placing", 2, 2),
+      progress("a", "history", 3, 4),
+    ]);
+    expect(s).toMatchObject({ status: "running", scope: "history", phase: "history", done: 3 });
+    const withHistory: PlacesStats = {
+      ...STATS,
+      kingdoms: 4,
+      characters: 20,
+      events: 35,
+      documents: 12,
+    };
+    const done = run(
+      [
+        {
+          type: "finished",
+          event: { jobId: "a", ok: true, mapEntityId: "map-1", stats: withHistory, error: null },
+        } as GenerateAction,
+      ],
+      s,
+    );
+    expect(done.status).toBe("finished");
+    expect(done.result?.stats).toMatchObject({ kingdoms: 4, events: 35 });
+  });
+
   it("ignores events when not running", () => {
     expect(run([progress("a", "writing", 1)])).toEqual(GENERATE_IDLE);
   });
@@ -119,10 +147,29 @@ describe("generateFraction", () => {
     expect(at("rendering", 1, 1)).toBeCloseTo(0.6);
     expect(at("writing", 5, 10)).toBeCloseTo(0.8);
   });
+  it("splits the bar for a history job", () => {
+    const at = (phase: GenerationPhase, done: number, total: number) =>
+      generateFraction(
+        run([
+          { type: "begin", scope: "history" },
+          { type: "started", jobId: "a" },
+          progress("a", phase, done, total),
+        ]),
+      );
+    expect(at("generating", 1, 1)).toBeCloseTo(0.3);
+    expect(at("placing", 1, 2)).toBeCloseTo(0.36);
+    expect(at("placing", 2, 2)).toBeCloseTo(0.42);
+    expect(at("history", 0, 2)).toBeCloseTo(0.42);
+    expect(at("history", 1, 2)).toBeCloseTo(0.47);
+    expect(at("history", 2, 2)).toBeCloseTo(0.52);
+    expect(at("rendering", 1, 1)).toBeCloseTo(0.6);
+    expect(at("writing", 5, 10)).toBeCloseTo(0.8);
+  });
 });
 
 describe("GENERATE_PHASE_LABELS", () => {
-  it("describes the placing phase", () => {
+  it("describes the placing and history phases", () => {
     expect(GENERATE_PHASE_LABELS.placing).toBe("Placing settlements and roads…");
+    expect(GENERATE_PHASE_LABELS.history).toBe("Writing kingdoms, dynasties and history…");
   });
 });

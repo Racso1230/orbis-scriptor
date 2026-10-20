@@ -85,6 +85,13 @@ function Field(props: { label: ReactNode; htmlFor: string; children: ReactNode }
   );
 }
 
+const SCOPE_HINTS: Record<GenerationScope, string> = {
+  mapOnly:
+    "Choose “Map + places” to add settlements and roads, or “Map + places + history” for kingdoms and their history.",
+  places: "Kingdoms = number of capital cities (places).",
+  history: "Kingdoms = number of realms, each with a capital, a ruling house and its history.",
+};
+
 const SEED_PROBLEM = `Seed must be a whole number from 0 to ${SEED_MAX}`;
 
 function SettingsView({ onClose }: { onClose: () => void }) {
@@ -157,8 +164,8 @@ function SettingsView({ onClose }: { onClose: () => void }) {
         <DialogTitle>{target ? TARGET_TITLE : "Generate map"}</DialogTitle>
         <DialogDescription>
           {target
-            ? "Fills this map with land, sea, rivers and biome stamps (and, with places, settlements and roads)."
-            : "Creates a new map with land, sea, rivers and biome stamps (and, with places, settlements and roads)."}{" "}
+            ? "Fills this map with land, sea, rivers and biome stamps (and, with places, settlements and roads; with history, kingdoms and their past)."
+            : "Creates a new map with land, sea, rivers and biome stamps (and, with places, settlements and roads; with history, kingdoms and their past)."}{" "}
           The same seed and settings always give the same map.
         </DialogDescription>
       </DialogHeader>
@@ -301,7 +308,7 @@ function SettingsView({ onClose }: { onClose: () => void }) {
                 onChange={(e) => chooseScope(e.target.value as GenerationScope)}
               >
                 {SCOPES.map((s) => (
-                  <option key={s.value} value={s.value} disabled={s.disabled}>
+                  <option key={s.value} value={s.value}>
                     {s.label}
                   </option>
                 ))}
@@ -319,9 +326,7 @@ function SettingsView({ onClose }: { onClose: () => void }) {
             </Field>
           </div>
           <p id="generate-scope-hint" className="-mt-2 text-xs text-muted-foreground">
-            {kingdomsEnabled
-              ? "Kingdoms = number of capital cities (places); factions and history arrive in 14c."
-              : "Choose “Map + places” to add settlements and roads. History arrives in 14c."}
+            {SCOPE_HINTS[base.scope] ?? SCOPE_HINTS.mapOnly}
           </p>
         </div>
 
@@ -420,6 +425,7 @@ function RunView({ onClose, onBack }: { onClose: () => void; onBack: () => void 
   const stats = run.result?.stats;
   const settlements = stats?.settlements ?? 0;
   const roads = stats?.roads ?? 0;
+  const kingdoms = stats?.kingdoms ?? 0;
   const running = run.status === "running";
 
   function openMap() {
@@ -488,10 +494,32 @@ function RunView({ onClose, onBack }: { onClose: () => void; onBack: () => void 
                   <Stat id="generate-result-roads" label="Roads" value={roads} />
                 </>
               )}
+              {kingdoms > 0 && (
+                <>
+                  <Stat id="generate-result-kingdoms" label="Kingdoms" value={kingdoms} />
+                  <Stat
+                    id="generate-result-characters"
+                    label="Characters"
+                    value={stats.characters ?? 0}
+                  />
+                  <Stat id="generate-result-events" label="Events" value={stats.events ?? 0} />
+                  <Stat
+                    id="generate-result-documents"
+                    label="Lore documents"
+                    value={stats.documents ?? 0}
+                  />
+                </>
+              )}
             </dl>
             {settlements > 0 && (
               <p id="generate-result-places-hint" className="text-xs text-muted-foreground">
                 Locations are in the sidebar under Locations; pins open them.
+              </p>
+            )}
+            {kingdoms > 0 && (
+              <p id="generate-result-history-hint" className="text-xs text-muted-foreground">
+                Factions, characters and events are in the sidebar; open a kingdom to see its ruler,
+                capital and lore. The Timeline and Graph show the history.
               </p>
             )}
           </section>

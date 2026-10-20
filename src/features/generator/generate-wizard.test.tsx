@@ -81,9 +81,13 @@ describe("GenerateWizard", () => {
     expect(screen.getByLabelText<HTMLSelectElement>("Climate").value).toBe("temperate");
     expect(screen.getByLabelText<HTMLSelectElement>("Scope").value).toBe("mapOnly");
     expect(screen.getByLabelText("Scope")).toBeEnabled();
-    expect(screen.getByRole("option", { name: "Map + places + history" })).toBeDisabled();
+    for (const name of ["Map only", "Map + places", "Map + places + history"]) {
+      expect(screen.getByRole("option", { name })).toBeEnabled();
+    }
     expect(screen.getByLabelText("Kingdoms")).toBeDisabled();
-    expect(screen.getByText(/History arrives in 14c/)).toBeInTheDocument();
+    expect(document.getElementById("generate-scope-hint")).toHaveTextContent(
+      /Map \+ places \+ history.*kingdoms and their history/,
+    );
 
     const img = await screen.findByRole<HTMLImageElement>("img", { name: "Terrain preview" });
     expect(img.src).toBe("data:image/png;base64,AAAA");
@@ -188,11 +192,7 @@ describe("GenerateWizard", () => {
     fireEvent.change(screen.getByLabelText("Scope"), { target: { value: "places" } });
     const kingdoms = screen.getByLabelText<HTMLInputElement>("Kingdoms");
     expect(kingdoms).toBeEnabled();
-    expect(
-      screen.getByText(
-        "Kingdoms = number of capital cities (places); factions and history arrive in 14c.",
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Kingdoms = number of capital cities (places).")).toBeInTheDocument();
 
     fireEvent.change(kingdoms, { target: { value: "13" } });
     expect(screen.getByRole("alert")).toHaveTextContent(/kingdoms must be between 1 and 12/);
@@ -241,7 +241,79 @@ describe("GenerateWizard", () => {
     expect(result).toHaveTextContent(
       "Locations are in the sidebar under Locations; pins open them.",
     );
+    expect(document.getElementById("generate-result-kingdoms")).not.toBeInTheDocument();
+    expect(document.getElementById("generate-result-history-hint")).not.toBeInTheDocument();
     expect(useGenerateStore.getState().lastScope).toBe("places");
+  });
+
+  it("generates history and shows kingdoms, characters, events and lore", async () => {
+    openWizard();
+    fireEvent.change(await screen.findByLabelText("Seed"), { target: { value: "9" } });
+    fireEvent.change(screen.getByLabelText("Scope"), { target: { value: "history" } });
+    const kingdoms = screen.getByLabelText<HTMLInputElement>("Kingdoms");
+    expect(kingdoms).toBeEnabled();
+    expect(
+      screen.getByText(
+        "Kingdoms = number of realms, each with a capital, a ruling house and its history.",
+      ),
+    ).toBeInTheDocument();
+    fireEvent.change(kingdoms, { target: { value: "13" } });
+    expect(screen.getByRole("alert")).toHaveTextContent(/kingdoms must be between 1 and 12/);
+    fireEvent.change(kingdoms, { target: { value: "4" } });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+
+    await waitFor(() =>
+      expect(h.generateMap).toHaveBeenCalledWith(
+        expect.objectContaining({ seed: 9, kingdoms: 4, scope: "history" }),
+        null,
+        null,
+      ),
+    );
+    await waitFor(() => expect(useGenerateStore.getState().state.jobId).toBe("job-1"));
+
+    const history = { jobId: "job-1", phase: "history" as GenerationPhase, done: 1, total: 2 };
+    act(() => h.progress?.({ payload: history }));
+    expect(screen.getByText("Writing kingdoms, dynasties and history…")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "47");
+
+    const stats: PlacesStats = {
+      landPercentActual: 40,
+      landMasses: 2,
+      rivers: 9,
+      stamps: 200,
+      biomeCounts: {},
+      settlements: 18,
+      roads: 21,
+      kingdoms: 4,
+      characters: 22,
+      events: 37,
+      documents: 15,
+    };
+    const f: GenerateFinished = {
+      jobId: "job-1",
+      ok: true,
+      mapEntityId: "map-3",
+      stats,
+      error: null,
+    };
+    act(() => h.finished?.({ payload: f }));
+    const result = screen.getByRole("region", { name: "Generation result" });
+    expect(document.getElementById("generate-result-settlements")).toHaveTextContent(
+      "Settlements18",
+    );
+    expect(document.getElementById("generate-result-roads")).toHaveTextContent("Roads21");
+    expect(document.getElementById("generate-result-kingdoms")).toHaveTextContent("Kingdoms4");
+    expect(document.getElementById("generate-result-characters")).toHaveTextContent("Characters22");
+    expect(document.getElementById("generate-result-events")).toHaveTextContent("Events37");
+    expect(document.getElementById("generate-result-documents")).toHaveTextContent(
+      "Lore documents15",
+    );
+    expect(result).toHaveTextContent(
+      "Factions, characters and events are in the sidebar; open a kingdom to see its ruler, capital and lore. The Timeline and Graph show the history.",
+    );
+    expect(document.getElementById("generate-result-history-hint")).toBeInTheDocument();
+    expect(useGenerateStore.getState().lastScope).toBe("history");
   });
 
   it("starts with the last used scope when opened again", async () => {
