@@ -58,13 +58,41 @@ pub fn save(
     // `unchecked_transaction` works with a shared `&Connection`; it is "unchecked"
     // only in that the compiler can't stop us nesting transactions.
     let tx = conn.unchecked_transaction()?;
-    db::documents::upsert(&tx, &doc)?;
-    // Saving lore is an edit of the entity ("recently edited" list).
-    db::entities::touch(&tx, entity_id, &doc.updated_at)?;
-    links::sync_mentions(&tx, entity_id, &parsed)?;
-    search::reindex_entity(&tx, entity_id)?;
+    write_doc(&tx, &doc, &parsed)?;
     tx.commit()?;
     Ok(doc)
+}
+
+/// Like [`save`] but WITHOUT its own transaction: the caller must already
+/// be inside one (the world generator saves its lore stubs together with
+/// everything else).
+pub fn save_in(
+    conn: &Connection,
+    entity_id: &str,
+    content: String,
+    plain_text: String,
+) -> AppResult<Document> {
+    ensure_entity_exists(conn, entity_id)?;
+    let parsed: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|_| AppError::Validation("Document content must be JSON".into()))?;
+    let doc = Document {
+        entity_id: entity_id.to_owned(),
+        content,
+        plain_text,
+        updated_at: now(),
+    };
+    write_doc(conn, &doc, &parsed)?;
+    Ok(doc)
+}
+
+/// The rows behind [`save`] and [`save_in`].
+fn write_doc(conn: &Connection, doc: &Document, parsed: &serde_json::Value) -> AppResult<()> {
+    db::documents::upsert(conn, doc)?;
+    // Saving lore is an edit of the entity ("recently edited" list).
+    db::entities::touch(conn, &doc.entity_id, &doc.updated_at)?;
+    links::sync_mentions(conn, &doc.entity_id, parsed)?;
+    search::reindex_entity(conn, &doc.entity_id)?;
+    Ok(())
 }
 
 #[cfg(test)]

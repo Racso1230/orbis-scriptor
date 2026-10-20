@@ -55,6 +55,10 @@ const STATS: PlacesStats = {
   biomeCounts: {},
   settlements: 0,
   roads: 0,
+  kingdoms: 0,
+  characters: 0,
+  events: 0,
+  documents: 0,
 };
 const finished = (jobId: string, ok: boolean): GenerateFinished => ({
   jobId,

@@ -10,6 +10,7 @@ use super::places::{RegionName, Settlement, Spacing, Tier, stamp_size};
 use super::rivers::River;
 use super::roads::{Road, Route};
 use super::scatter::StampPlacement;
+use crate::error::AppResult;
 use crate::models::generator::{Biome, Climate, GenerationStats, GeneratorParams};
 use crate::models::map::MapGeometry;
 use crate::services::maps::MAX_OPS;
@@ -19,6 +20,8 @@ use crate::services::maps::MAX_OPS;
 pub const GENERATOR_VERSION: u32 = 1;
 
 pub const LAYER_TERRAIN: &str = "Terrain";
+/// Kingdom areas (history scope); drawn just above the terrain.
+pub const LAYER_KINGDOMS: &str = "Kingdoms";
 pub const LAYER_RIVERS: &str = "Rivers";
 pub const LAYER_FEATURES: &str = "Features";
 pub const LAYER_ROADS: &str = "Roads";
@@ -42,6 +45,10 @@ pub enum ObjectRole {
     /// The pin of settlement `index`; the writer links it to the location
     /// entity it creates for that settlement.
     SettlementPin { index: usize },
+    /// One connected region of kingdom `index` (into
+    /// `GeneratedHistory::kingdoms`) as an `area`; the writer links it to
+    /// the kingdom's faction entity.
+    Kingdom { index: usize },
 }
 
 /// One map object to create. Geometry and style are already valid for
@@ -94,6 +101,8 @@ pub struct GeneratedMap {
     pub rivers: Vec<River>,
     /// Settlements, roads and region names; `None` for the map-only scope.
     pub places: Option<GeneratedPlaces>,
+    /// Kingdoms, people, events and lore; `None` unless the history scope.
+    pub history: Option<GeneratedHistory>,
 }
 
 /// The "places" part of a plan (Phase 14b).
@@ -108,6 +117,224 @@ pub struct GeneratedPlaces {
     pub regions: Vec<RegionName>,
     /// The spacing each tier kept.
     pub spacing: Spacing,
+}
+
+// ---- History (Phase 14c) ----
+//
+// The pure plan has no database ids yet, so everything refers to other
+// parts of the plan by index, wrapped in a [`Ref`]. The writer creates the
+// entities first and then swaps every `Ref` for the id it got.
+
+/// A reference to an entity the writer will create.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum Ref {
+    /// `GeneratedPlaces::settlements[i]` (a `location`).
+    Settlement(usize),
+    /// `GeneratedHistory::kingdoms[i]` (a `faction`).
+    Kingdom(usize),
+    /// `GeneratedHistory::characters[i]` (a `character`).
+    Character(usize),
+    /// `GeneratedHistory::events[i]` (an `event`).
+    Event(usize),
+}
+
+impl Ref {
+    /// The entity type the writer creates for this reference.
+    pub fn entity_type(self) -> &'static str {
+        match self {
+            Ref::Settlement(_) => "location",
+            Ref::Kingdom(_) => "faction",
+            Ref::Character(_) => "character",
+            Ref::Event(_) => "event",
+        }
+    }
+}
+
+/// A point in history: a year index (year index 0 starts on the calendar's
+/// epoch, i.e. day 0 with the default calendar) and how far into that
+/// year, `0.0..1.0`. The writer turns it into a day number with the
+/// world's display calendar, whose year length is only known there.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+pub struct HistDate {
+    pub year: i64,
+    pub part: f64,
+}
+
+/// The year index all generated history leads up to ("now").
+pub const PRESENT_YEAR: i64 = 500;
+
+/// One kingdom (a `faction` entity of kind "kingdom").
+#[derive(Debug, Clone, PartialEq)]
+pub struct Kingdom {
+    pub name: String,
+    /// "House Varn".
+    pub house: String,
+    /// Fill colour, `#rrggbb`.
+    pub colour: String,
+    /// Index of its capital in `GeneratedPlaces::settlements`.
+    pub capital: usize,
+    /// Every settlement it rules (the capital included), ascending.
+    pub settlements: Vec<usize>,
+    /// Number of grid nodes it claims.
+    pub cells: usize,
+    /// Kingdoms it shares a land border with, ascending.
+    pub neighbours: Vec<usize>,
+    /// Allied / hostile neighbours, ascending.
+    pub allies: Vec<usize>,
+    pub enemies: Vec<usize>,
+    /// Naming culture (that of its capital).
+    pub culture: usize,
+    /// Index into `GeneratedHistory::characters` of the current ruler.
+    pub ruler: usize,
+    pub founded: HistDate,
+    pub summary: String,
+}
+
+/// A person's place in their dynasty.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PersonRole {
+    /// Founded the kingdom; dead.
+    Founder,
+    /// The founder's child and second ruler.
+    Heir,
+    /// The heir's child, ruling now.
+    Ruler,
+    /// The current ruler's spouse.
+    Spouse,
+    /// A child of the current ruler and spouse.
+    Child,
+}
+
+/// One person (a `character` entity).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Person {
+    pub kingdom: usize,
+    pub name: String,
+    pub role: PersonRole,
+    pub alive: bool,
+    /// Year of birth, and of death for the dead.
+    pub born: i64,
+    pub died: Option<i64>,
+    /// Age now; only for the living.
+    pub age: Option<u32>,
+    pub species: &'static str,
+    pub summary: String,
+}
+
+/// A relationship to create with `relationships::create`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Rel {
+    pub source: Ref,
+    pub target: Ref,
+    /// A key from `models::relationship::all()`.
+    pub kind: &'static str,
+    pub label: Option<String>,
+}
+
+/// What a history event is about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EventKind {
+    CapitalFounding,
+    KingdomFounding,
+    War,
+    Coronation,
+}
+
+/// One timeline event; `participants` become `involved_in` links.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HistEvent {
+    pub name: String,
+    pub kind: EventKind,
+    pub start: HistDate,
+    /// Wars are ranges; everything else is a point in time.
+    pub end: Option<HistDate>,
+    /// 1..=5 (`MAX_IMPORTANCE`).
+    pub importance: i32,
+    pub participants: Vec<Ref>,
+    pub summary: String,
+}
+
+/// A piece of a lore paragraph.
+#[derive(Debug, Clone, PartialEq)]
+pub enum LoreInline {
+    Text(String),
+    /// Becomes a TipTap `mention` node of that entity.
+    Mention(Ref),
+    /// A year, written in the display calendar (e.g. "412 AF").
+    Year(HistDate),
+}
+
+/// A short lore document for one entity: a heading and a few paragraphs.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LoreDoc {
+    pub target: Ref,
+    pub heading: String,
+    pub paragraphs: Vec<Vec<LoreInline>>,
+}
+
+impl LoreDoc {
+    /// The TipTap JSON and the plain text (mentions written as names) of
+    /// this document. `id` and `name` look up a referenced entity, `year`
+    /// formats a date. Fails when `id` fails (an unknown reference).
+    ///
+    /// `impl Fn(Ref) -> ...` parameters accept any closure of that shape,
+    /// so the writer can pass lookups into its id tables and tests can pass
+    /// simple fakes.
+    pub fn render(
+        &self,
+        id: impl Fn(Ref) -> AppResult<String>,
+        name: impl Fn(Ref) -> String,
+        year: impl Fn(HistDate) -> String,
+    ) -> AppResult<(Value, String)> {
+        let mut content = vec![json!({
+            "type": "heading",
+            "attrs": { "level": 2 },
+            "content": [{ "type": "text", "text": self.heading }],
+        })];
+        let mut plain = vec![self.heading.clone()];
+        for paragraph in &self.paragraphs {
+            let mut nodes: Vec<Value> = Vec::new();
+            let mut text = String::new();
+            for piece in paragraph {
+                match piece {
+                    LoreInline::Text(t) => {
+                        nodes.push(json!({ "type": "text", "text": t }));
+                        text.push_str(t);
+                    }
+                    LoreInline::Mention(r) => {
+                        // `id(*r)?` returns early from `render` if the
+                        // reference is unknown.
+                        nodes.push(json!({ "type": "mention", "attrs": { "id": id(*r)? } }));
+                        text.push_str(&name(*r));
+                    }
+                    LoreInline::Year(d) => {
+                        let y = year(*d);
+                        nodes.push(json!({ "type": "text", "text": y }));
+                        text.push_str(&y);
+                    }
+                }
+            }
+            content.push(json!({ "type": "paragraph", "content": nodes }));
+            plain.push(text);
+        }
+        Ok((
+            json!({ "type": "doc", "content": content }),
+            plain.join("\n\n"),
+        ))
+    }
+}
+
+/// The "history" part of a plan (Phase 14c).
+#[derive(Debug, Clone, PartialEq)]
+pub struct GeneratedHistory {
+    pub kingdoms: Vec<Kingdom>,
+    pub characters: Vec<Person>,
+    pub relationships: Vec<Rel>,
+    /// Oldest first.
+    pub events: Vec<HistEvent>,
+    pub documents: Vec<LoreDoc>,
+    /// Kingdom index per grid node (`politics::UNCLAIMED` where none).
+    pub territory: Vec<u32>,
 }
 
 /// Width of lines that should look the same on small and large maps.

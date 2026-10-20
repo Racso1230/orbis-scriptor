@@ -41,7 +41,8 @@ pub enum Climate {
     Volcanic,
 }
 
-/// How much of a world to generate. `History` arrives in Phase 14c.
+/// How much of a world to generate. Each scope includes the ones before it:
+/// `History` (kingdoms, dynasties, events, lore) implies `Places`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum GenerationScope {
@@ -198,6 +199,14 @@ pub struct GenerationStats {
     pub settlements: u32,
     /// Road objects drawn (0 for the map-only scope).
     pub roads: u32,
+    /// Kingdoms (faction entities) created (0 unless the history scope).
+    pub kingdoms: u32,
+    /// Rulers and their families (character entities; 0 unless history).
+    pub characters: u32,
+    /// Timeline events (0 unless history).
+    pub events: u32,
+    /// Lore documents written (0 unless history).
+    pub documents: u32,
 }
 
 #[cfg(test)]

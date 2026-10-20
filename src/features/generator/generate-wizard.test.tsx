@@ -166,6 +166,10 @@ describe("GenerateWizard", () => {
       biomeCounts: {},
       settlements: 0,
       roads: 0,
+      kingdoms: 0,
+      characters: 0,
+      events: 0,
+      documents: 0,
     };
     const f: GenerateFinished = {
       jobId: "job-1",
@@ -223,6 +227,10 @@ describe("GenerateWizard", () => {
       biomeCounts: {},
       settlements: 18,
       roads: 21,
+      kingdoms: 0,
+      characters: 0,
+      events: 0,
+      documents: 0,
     };
     const f: GenerateFinished = {
       jobId: "job-1",
@@ -370,6 +378,10 @@ describe("GenerateWizard", () => {
       biomeCounts: {},
       settlements: 0,
       roads: 0,
+      kingdoms: 0,
+      characters: 0,
+      events: 0,
+      documents: 0,
     };
     act(() =>
       h.finished?.({

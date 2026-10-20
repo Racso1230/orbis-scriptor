@@ -19,6 +19,10 @@ const STATS: PlacesStats = {
   biomeCounts: { ocean: 100 },
   settlements: 24,
   roads: 30,
+  kingdoms: 0,
+  characters: 0,
+  events: 0,
+  documents: 0,
 };
 // `as GenerateAction` so "placing" is accepted before the bindings know it.
 const progress = (jobId: string, phase: GenerationPhase, done: number, total = 4) =>

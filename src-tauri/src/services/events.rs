@@ -78,6 +78,33 @@ pub fn create(
     get(conn, &entity.id)
 }
 
+/// Like [`create`] but WITHOUT its own transaction, and with an importance
+/// and the calendar the dates were made in. The caller must already be
+/// inside a transaction (the world generator writes everything in one).
+pub fn create_in(
+    conn: &Connection,
+    name: &str,
+    start_day: i64,
+    end_day: Option<i64>,
+    importance: i32,
+    calendar_id: &str,
+) -> AppResult<EventSummary> {
+    validate_importance(importance)?;
+    calendar::resolve(conn, Some(calendar_id))?;
+    let entity = entities::create_event_in(
+        conn,
+        NewEntity {
+            entity_type: "event".into(),
+            name: name.into(),
+        },
+        start_day,
+        end_day,
+    )?;
+    db::events::update_dates(conn, &entity.id, start_day, end_day, Some(importance))?;
+    db::events::set_calendar(conn, &entity.id, calendar_id)?;
+    get(conn, &entity.id)
+}
+
 pub fn get(conn: &Connection, entity_id: &str) -> AppResult<EventSummary> {
     db::events::get(conn, entity_id)?
         .ok_or_else(|| AppError::NotFound(format!("Event {entity_id} does not exist")))

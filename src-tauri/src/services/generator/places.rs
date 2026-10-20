@@ -70,6 +70,9 @@ pub struct Settlement {
     pub culture: usize,
     /// One sentence for the entity summary.
     pub summary: String,
+    /// Index of the kingdom it belongs to (history scope only; `None` when
+    /// its land mass has no capital, or for the places scope).
+    pub kingdom: Option<usize>,
 }
 
 /// The name of one land mass that has settlements.
@@ -484,6 +487,7 @@ pub fn place_settlements(
                 summary: summary(site.tier, port, river, coast, &region.1),
                 region: region.0,
                 culture,
+                kingdom: None,
             }
         })
         .collect();

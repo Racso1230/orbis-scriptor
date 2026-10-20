@@ -1,7 +1,8 @@
 //! Saves a [`GeneratedMap`] plan into a world: the background image goes to
-//! `assets/`, everything else (map entity, location entities, layers,
-//! objects, tags, settings) is written through the existing services in ONE
-//! database transaction, so a failure leaves the world exactly as it was.
+//! `assets/`, everything else (map entity, location entities, kingdoms,
+//! people, events, relationships, lore, layers, objects, tags, settings) is
+//! written through the existing services in ONE database transaction, so a
+//! failure leaves the world exactly as it was.
 
 use std::path::Path;
 
@@ -9,13 +10,17 @@ use rusqlite::Connection;
 
 use serde_json::json;
 
-use super::plan::{GeneratedMap, GeneratedPlaces, ObjectRole};
+use super::plan::{GeneratedHistory, GeneratedMap, GeneratedPlaces, HistDate, ObjectRole, Ref};
 use crate::db;
 use crate::error::{AppError, AppResult};
+use crate::models::calendar::{Calendar, DateStyle};
 use crate::models::entity::{EntityPatch, NewEntity};
 use crate::models::generate::GeneratePhase;
 use crate::models::map::{Asset, BackgroundKind, MapBackground, MapOp, NewMapObject};
-use crate::services::{assets, entities, maps, search, tags};
+use crate::services::{
+    assets, calendar, calendar_manager, documents, entities, events, maps, relationships, search,
+    tags,
+};
 
 /// Every generated entity carries this tag, so it is easy to find or delete.
 pub const TAG_GENERATED: &str = "generated";
@@ -33,6 +38,10 @@ pub type GenerateProgressFn<'a> = &'a mut dyn FnMut(GeneratePhase, u32, u32);
 
 /// Location entities are created this many at a time per progress step.
 const ENTITIES_PER_STEP: usize = 25;
+
+/// Progress steps of the history part: factions, characters, events,
+/// relationships, documents.
+const HISTORY_STEPS: usize = 5;
 
 /// The message shown when generating into a map that is not empty.
 pub const TARGET_NOT_EMPTY: &str = "This map already has content. Generate into a new map instead.";
@@ -108,7 +117,12 @@ fn write_rows(
         .places
         .as_ref()
         .map_or(0, |p| p.settlements.len().div_ceil(ENTITIES_PER_STEP));
-    let total = (batches + entity_steps + 2) as u32;
+    let history_steps = if plan.history.is_some() {
+        HISTORY_STEPS
+    } else {
+        0
+    };
+    let total = (batches + entity_steps + history_steps + 2) as u32;
     let mut done = 0u32;
     on_progress(GeneratePhase::Writing, done, total);
 
@@ -171,6 +185,26 @@ fn write_rows(
         }
     }
 
+    // Kingdoms, people, events, relationships and lore. The kingdom areas
+    // below link to the faction ids created here.
+    let mut faction_ids: Vec<String> = Vec::new();
+    if let (Some(history), Some(places)) = (&plan.history, &plan.places) {
+        let mut step = || {
+            done += 1;
+            on_progress(GeneratePhase::Writing, done, total);
+        };
+        let ids = write_history(
+            &tx,
+            history,
+            places,
+            &location_ids,
+            &names,
+            &mut cache,
+            &mut step,
+        )?;
+        faction_ids = ids.factions;
+    }
+
     for (index, layer) in plan.layers.iter().enumerate() {
         // The first plan layer reuses the "Default" layer the map came with.
         let layer_id = match (index, &default_layer) {
@@ -191,11 +225,17 @@ fn write_rows(
             let ops: Vec<MapOp> = batch
                 .iter()
                 .map(|object| {
-                    // Settlement pins link to their location entity.
+                    // Settlement pins link to their location entity, kingdom
+                    // areas to their faction.
                     let entity_id = match object.role {
                         ObjectRole::SettlementPin { index } => {
                             Some(location_ids.get(index).cloned().ok_or_else(|| {
                                 AppError::Internal(format!("no location for settlement {index}"))
+                            })?)
+                        }
+                        ObjectRole::Kingdom { index } => {
+                            Some(faction_ids.get(index).cloned().ok_or_else(|| {
+                                AppError::Internal(format!("no faction for kingdom {index}"))
                             })?)
                         }
                         _ => None,
@@ -282,6 +322,200 @@ fn write_locations(
         ids.push(entity.id);
         after_each(ids.len());
     }
+    Ok(ids)
+}
+
+/// Entity ids of everything the history part created, by plan index. The
+/// `'a` lifetime says it borrows the location ids from the caller.
+struct HistoryIds<'a> {
+    locations: &'a [String],
+    factions: Vec<String>,
+    characters: Vec<String>,
+    events: Vec<String>,
+}
+
+impl HistoryIds<'_> {
+    /// The id the writer gave to `r`.
+    fn get(&self, r: Ref) -> AppResult<String> {
+        let (list, i): (&[String], usize) = match r {
+            Ref::Settlement(i) => (self.locations, i),
+            Ref::Kingdom(i) => (&self.factions, i),
+            Ref::Character(i) => (&self.characters, i),
+            Ref::Event(i) => (&self.events, i),
+        };
+        list.get(i)
+            .cloned()
+            .ok_or_else(|| AppError::Internal(format!("nothing was created for {r:?}")))
+    }
+}
+
+/// Absolute day number of a plan date in the display calendar.
+fn day_of(calendar: &Calendar, date: HistDate) -> i64 {
+    let def = &calendar.definition;
+    let start = calendar::year_start_day(def, date.year);
+    let length = calendar::days_in_year(def, date.year);
+    // `as i64` truncates towards zero; the clamp keeps it inside the year.
+    start + ((date.part * length as f64) as i64).clamp(0, length - 1)
+}
+
+/// The name of whatever `r` refers to (for plain text).
+fn ref_name(history: &GeneratedHistory, places: &GeneratedPlaces, r: Ref) -> String {
+    let name = match r {
+        Ref::Settlement(i) => places.settlements.get(i).map(|s| &s.name),
+        Ref::Kingdom(i) => history.kingdoms.get(i).map(|k| &k.name),
+        Ref::Character(i) => history.characters.get(i).map(|c| &c.name),
+        Ref::Event(i) => history.events.get(i).map(|e| &e.name),
+    };
+    name.cloned().unwrap_or_default()
+}
+
+/// Creates a tagged entity with a summary and properties; returns its id.
+fn create_entity(
+    conn: &Connection,
+    entity_type: &str,
+    name: &str,
+    summary: &str,
+    properties: Option<serde_json::Value>,
+    tag_names: &[String],
+    cache: &mut std::collections::HashMap<String, String>,
+) -> AppResult<String> {
+    let entity = entities::create_in(
+        conn,
+        NewEntity {
+            entity_type: entity_type.into(),
+            name: name.into(),
+        },
+    )?;
+    tags::apply_entity_tags(conn, &entity.id, tag_names, cache)?;
+    // `update_in` validates the properties against the type's fields and
+    // re-indexes the entity for search (tags included).
+    entities::update_in(
+        conn,
+        &entity.id,
+        EntityPatch {
+            name: None,
+            summary: Some(summary.to_owned()),
+            properties,
+        },
+    )?;
+    Ok(entity.id)
+}
+
+/// Writes the history part of a plan (inside the caller's transaction):
+/// faction and character entities, events with their participants,
+/// relationships, then the lore documents (last, when every mention has an
+/// id). `step` is called once per group.
+fn write_history<'a>(
+    conn: &Connection,
+    history: &GeneratedHistory,
+    places: &GeneratedPlaces,
+    locations: &'a [String],
+    tag_names: &[String],
+    cache: &mut std::collections::HashMap<String, String>,
+    step: &mut dyn FnMut(),
+) -> AppResult<HistoryIds<'a>> {
+    let mut ids = HistoryIds {
+        locations,
+        factions: Vec::with_capacity(history.kingdoms.len()),
+        characters: Vec::with_capacity(history.characters.len()),
+        events: Vec::with_capacity(history.events.len()),
+    };
+
+    for kingdom in &history.kingdoms {
+        let leader = history
+            .characters
+            .get(kingdom.ruler)
+            .map(|c| c.name.clone())
+            .unwrap_or_default();
+        let id = create_entity(
+            conn,
+            "faction",
+            &kingdom.name,
+            &kingdom.summary,
+            Some(json!({ "kind": "kingdom", "leader": leader })),
+            tag_names,
+            cache,
+        )?;
+        ids.factions.push(id);
+    }
+    step();
+
+    for person in &history.characters {
+        let mut properties = json!({
+            "species": person.species,
+            "status": if person.alive { "alive" } else { "dead" },
+        });
+        if let Some(age) = person.age {
+            properties["age"] = json!(age);
+        }
+        let id = create_entity(
+            conn,
+            "character",
+            &person.name,
+            &person.summary,
+            Some(properties),
+            tag_names,
+            cache,
+        )?;
+        ids.characters.push(id);
+    }
+    step();
+
+    // Dates go in as day numbers of the display calendar: the year length
+    // (and leap years) come from its definition.
+    let display = calendar_manager::get_display(conn)?;
+    for event in &history.events {
+        let start = day_of(&display, event.start);
+        let end = event.end.map(|d| day_of(&display, d));
+        let created =
+            events::create_in(conn, &event.name, start, end, event.importance, &display.id)?;
+        tags::apply_entity_tags(conn, &created.entity_id, tag_names, cache)?;
+        entities::update_in(
+            conn,
+            &created.entity_id,
+            EntityPatch {
+                name: None,
+                summary: Some(event.summary.clone()),
+                properties: None,
+            },
+        )?;
+        ids.events.push(created.entity_id);
+    }
+    for (event, event_id) in history.events.iter().zip(&ids.events) {
+        for who in &event.participants {
+            events::add_involved(conn, event_id, &ids.get(*who)?)?;
+        }
+    }
+    step();
+
+    for rel in &history.relationships {
+        relationships::create(
+            conn,
+            &ids.get(rel.source)?,
+            &ids.get(rel.target)?,
+            rel.kind,
+            rel.label.clone(),
+        )?;
+    }
+    step();
+
+    for doc in &history.documents {
+        let target = ids.get(doc.target)?;
+        // Mentions get the ids created above; years are written in the
+        // display calendar (e.g. "412 AF").
+        let (content, plain) = doc.render(
+            |r| ids.get(r),
+            |r| ref_name(history, places, r),
+            |d| {
+                calendar::format(&display.definition, day_of(&display, d), DateStyle::Year)
+                    .unwrap_or_else(|_| format!("year {}", d.year + 1))
+            },
+        )?;
+        // `documents::save_in` also records the mention links and updates
+        // the search index.
+        documents::save_in(conn, &target, content.to_string(), plain)?;
+    }
+    step();
     Ok(ids)
 }
 
@@ -767,5 +1001,234 @@ mod tests {
             drawn.layers[0].name,
             crate::services::maps::DEFAULT_LAYER_NAME
         );
+    }
+
+    /// A small plan with the full history scope.
+    fn history_plan() -> &'static GeneratedMap {
+        static PLAN: OnceLock<GeneratedMap> = OnceLock::new();
+        PLAN.get_or_init(|| {
+            generate_map(&GeneratorParams {
+                seed: 1,
+                width: 800,
+                height: 600,
+                scope: GenerationScope::History,
+                ..GeneratorParams::default()
+            })
+            .unwrap()
+        })
+    }
+
+    fn count_kind(conn: &Connection, kind: &str) -> i64 {
+        conn.query_row("SELECT count(*) FROM links WHERE kind = ?1", [kind], |r| {
+            r.get(0)
+        })
+        .unwrap()
+    }
+
+    /// The id of the only entity of `entity_type` called `name`.
+    fn id_named(conn: &Connection, entity_type: &str, name: &str) -> String {
+        let found: Vec<_> = entities::list(conn, Some(entity_type))
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.name == name)
+            .collect();
+        assert_eq!(found.len(), 1, "{entity_type} {name}");
+        found[0].id.clone()
+    }
+
+    #[test]
+    fn writes_history_as_linked_entities() {
+        use crate::services::generator::{EventKind, LAYER_KINGDOMS, PersonRole};
+        use crate::services::{graph, links};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let w = new_world(tmp.path());
+        let assets_dir = w.path.join(ASSETS_DIR);
+        let plan = history_plan();
+        let h = plan.history.as_ref().unwrap();
+        let settlements = &plan.places.as_ref().unwrap().settlements;
+
+        let mut last = (GeneratePhase::Rendering, 0, 0);
+        let mut record = |p: GeneratePhase, d: u32, t: u32| last = (p, d, t);
+        let map_id = write_map(&w.conn, &assets_dir, plan, "World", None, &mut record).unwrap();
+        assert_eq!(last.0, GeneratePhase::Writing);
+        assert_eq!(last.1, last.2);
+
+        let factions = entities::list(&w.conn, Some("faction")).unwrap();
+        let characters = entities::list(&w.conn, Some("character")).unwrap();
+        let events_list = entities::list(&w.conn, Some("event")).unwrap();
+        assert_eq!(factions.len(), h.kingdoms.len());
+        assert_eq!(characters.len(), h.characters.len());
+        assert_eq!(events_list.len(), h.events.len());
+        assert_eq!(count(&w.conn, "documents") as usize, h.documents.len());
+        assert_eq!(plan.stats.kingdoms as usize, h.kingdoms.len());
+        assert_eq!(plan.stats.documents as usize, h.documents.len());
+
+        // Every participant is an `involved_in` link; every relationship a
+        // row; every lore stub records its mentions.
+        let involved: usize = h.events.iter().map(|e| e.participants.len()).sum();
+        assert_eq!(count_kind(&w.conn, "involved_in") as usize, involved);
+        let rels: i64 = relationships::list_kinds()
+            .iter()
+            .map(|k| count_kind(&w.conn, &k.key))
+            .sum();
+        assert_eq!(rels as usize, h.relationships.len());
+        assert!(count_kind(&w.conn, "mention") > 0);
+
+        for (k, kingdom) in h.kingdoms.iter().enumerate() {
+            let faction_id = id_named(&w.conn, "faction", &kingdom.name);
+            let faction = entities::get(&w.conn, &faction_id).unwrap();
+            let ruler = &h.characters[kingdom.ruler];
+            assert_eq!(faction.properties["kind"], "kingdom");
+            assert_eq!(faction.properties["leader"], ruler.name.as_str());
+            assert_eq!(faction.summary, kingdom.summary);
+            assert_eq!(faction.tags, [TAG_GENERATED]);
+
+            // The capital's backlinks include its kingdom's lore.
+            let capital = &settlements[kingdom.capital];
+            let capital_id = id_named(&w.conn, "location", &capital.name);
+            let back = links::backlinks(&w.conn, &capital_id, &capital.name).unwrap();
+            assert!(back.iter().any(|b| b.source_id == faction_id), "{back:?}");
+            let lore = documents::get(&w.conn, &faction_id).unwrap();
+            assert!(lore.plain_text.contains(&capital.name));
+            assert!(lore.content.contains(&capital_id));
+            // Search finds the kingdom by name.
+            let hits = search::search(&w.conn, &kingdom.name, 100).unwrap();
+            assert!(
+                hits.iter().any(|hit| hit.entity_id == faction_id),
+                "{hits:?}"
+            );
+
+            // The family tree around the ruler shows the founder
+            // (grandparent) and the children.
+            let ruler_id = id_named(&w.conn, "character", &ruler.name);
+            let ruler_entity = entities::get(&w.conn, &ruler_id).unwrap();
+            assert_eq!(ruler_entity.properties["status"], "alive");
+            assert_eq!(ruler_entity.properties["age"], ruler.age.unwrap());
+            let tree = graph::get_family_tree(&w.conn, &ruler_id, None, None).unwrap();
+            let generation_of = |name: &str| {
+                tree.nodes
+                    .iter()
+                    .find(|n| n.name == name)
+                    .map(|n| n.generation)
+            };
+            for p in h.characters.iter().filter(|p| p.kingdom == k) {
+                let expected = match p.role {
+                    PersonRole::Founder => -2,
+                    PersonRole::Heir => -1,
+                    PersonRole::Ruler | PersonRole::Spouse => 0,
+                    PersonRole::Child => 1,
+                };
+                assert_eq!(generation_of(&p.name), Some(expected), "{}", p.name);
+                if p.role == PersonRole::Founder {
+                    let founder =
+                        entities::get(&w.conn, &id_named(&w.conn, "character", &p.name)).unwrap();
+                    assert_eq!(founder.properties["status"], "dead");
+                }
+            }
+
+            // The kingdom's wars and coronation are on its timeline.
+            let timeline = events::list_for_entity(&w.conn, &faction_id).unwrap();
+            let planned = h
+                .events
+                .iter()
+                .filter(|e| e.participants.contains(&Ref::Kingdom(k)))
+                .count();
+            assert_eq!(timeline.len(), planned);
+        }
+
+        // Event dates are day numbers of the display calendar, in order.
+        let display = calendar_manager::get_display(&w.conn).unwrap();
+        let mut previous = i64::MIN;
+        for e in &h.events {
+            let id = id_named(&w.conn, "event", &e.name);
+            let stored = events::get(&w.conn, &id).unwrap();
+            assert_eq!(stored.start_day, day_of(&display, e.start));
+            assert_eq!(stored.end_day, e.end.map(|d| day_of(&display, d)));
+            assert_eq!(stored.importance, e.importance);
+            assert_eq!(stored.calendar_id, display.id);
+            assert!(stored.start_day >= previous);
+            previous = stored.start_day;
+            if e.kind == EventKind::War {
+                assert!(stored.end_day.unwrap() > stored.start_day);
+            }
+        }
+
+        // Kingdom areas sit above the terrain and link to their factions.
+        let data = maps::get_map(&w.conn, &assets_dir, &map_id).unwrap();
+        let names: Vec<&str> = data.layers.iter().map(|l| l.name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                LAYER_TERRAIN,
+                LAYER_KINGDOMS,
+                LAYER_RIVERS,
+                LAYER_ROADS,
+                LAYER_FEATURES,
+                LAYER_PLACES
+            ]
+        );
+        let kingdoms_layer = &data.layers[1].id;
+        let areas: Vec<_> = data
+            .objects
+            .iter()
+            .filter(|o| &o.layer_id == kingdoms_layer)
+            .collect();
+        assert!(!areas.is_empty());
+        for area in areas {
+            assert_eq!(area.entity_type.as_deref(), Some("faction"));
+        }
+    }
+
+    #[test]
+    fn a_failure_after_history_leaves_no_history_rows() {
+        let tmp = tempfile::tempdir().unwrap();
+        let w = new_world(tmp.path());
+        let before = (
+            count(&w.conn, "entities"),
+            count(&w.conn, "links"),
+            count(&w.conn, "documents"),
+            count(&w.conn, "events"),
+        );
+        // The bad object is on the last layer: written after every faction,
+        // character, event, relationship and document.
+        let mut bad = history_plan().clone();
+        let last = bad.layers.len() - 1;
+        bad.layers[last].objects.push(GeneratedObject {
+            geometry: MapGeometry::Area {
+                points: vec![Point { x: 1.0, y: 1.0 }, Point { x: 2.0, y: 2.0 }],
+            },
+            style: json!({}),
+            role: ObjectRole::Coast,
+        });
+        let err = write(&w, &bad).unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)), "{err:?}");
+        let after = (
+            count(&w.conn, "entities"),
+            count(&w.conn, "links"),
+            count(&w.conn, "documents"),
+            count(&w.conn, "events"),
+        );
+        assert_eq!(before, after);
+        for t in ["faction", "character", "event", "location"] {
+            assert!(entities::list(&w.conn, Some(t)).unwrap().is_empty(), "{t}");
+        }
+        assert_eq!(png_files(&w.path.join(ASSETS_DIR)), 0);
+
+        // A broken reference inside the history part fails just the same.
+        let mut bad = history_plan().clone();
+        bad.history
+            .as_mut()
+            .unwrap()
+            .relationships
+            .push(crate::services::generator::Rel {
+                source: Ref::Kingdom(0),
+                target: Ref::Kingdom(999),
+                kind: "ally_of",
+                label: None,
+            });
+        assert!(matches!(write(&w, &bad), Err(AppError::Internal(_))));
+        assert_eq!(count(&w.conn, "entities"), before.0);
+        assert_eq!(count(&w.conn, "documents"), before.2);
     }
 }

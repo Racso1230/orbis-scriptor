@@ -237,6 +237,63 @@ impl NameGenerator {
         }
     }
 
+    /// Swaps in a new random stream but keeps the cultures and every name
+    /// given so far. The history stage uses its own stream, so adding names
+    /// there can never change the settlement names.
+    pub fn reseed(&mut self, rng: ChaCha8Rng) {
+        self.rng = rng;
+    }
+
+    /// A unique root word for a family, e.g. "Varn" (the caller adds
+    /// "House"). Short: one or two syllables.
+    pub fn family(&mut self, culture: usize) -> String {
+        let g = self.grammar(culture);
+        for _ in 0..200 {
+            let syllables = self.rng.random_range(1..=2);
+            let candidate = capitalise(&self.word(g, syllables));
+            if let Some(name) = self.accept(candidate) {
+                return name;
+            }
+        }
+        self.fallback(g)
+    }
+
+    /// A unique given name, e.g. "Isolde".
+    pub fn given(&mut self, culture: usize) -> String {
+        let g = self.grammar(culture);
+        for _ in 0..200 {
+            let syllables = if self.rng.random_bool(0.85) { 2 } else { 3 };
+            let candidate = capitalise(&self.word(g, syllables));
+            if let Some(name) = self.accept(candidate) {
+                return name;
+            }
+        }
+        self.fallback(g)
+    }
+
+    /// A kingdom name, e.g. "Kingdom of Valdmark", "The Corin Realm" or
+    /// "Bryn Dominion".
+    pub fn kingdom(&mut self, culture: usize) -> String {
+        let g = self.grammar(culture);
+        for _ in 0..200 {
+            let mut root = capitalise(&self.word(g, 2));
+            if self.rng.random_bool(0.4) {
+                root = capitalise(&format!("{root}{}", self.pick(g.region_suffixes)));
+            }
+            let form = self.rng.random_range(0..5);
+            // Only the root has to be new; `accept` also checks its length.
+            if let Some(root) = self.accept(root) {
+                return match form {
+                    0 | 1 => format!("Kingdom of {root}"),
+                    2 => format!("The {root} Realm"),
+                    3 => format!("{root} Dominion"),
+                    _ => format!("Principality of {root}"),
+                };
+            }
+        }
+        format!("Kingdom of {}", self.fallback(g))
+    }
+
     /// Practically never reached: a long word with a counter is unique.
     fn fallback(&mut self, g: &'static Grammar) -> String {
         let mut n = 2;

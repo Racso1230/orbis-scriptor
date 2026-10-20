@@ -39,18 +39,20 @@ struct Padded<'a> {
     // `'a` is a lifetime: it says `Padded` borrows the grid and cannot
     // outlive it. The compiler checks this so we never read freed memory.
     grid: &'a TerrainGrid,
+    /// One value per grid node; `> 0` is "inside" (land for the coast).
+    values: &'a [f64],
     w: usize,
     h: usize,
 }
 
 impl Padded<'_> {
-    /// Height minus sea level (> 0 is land) of padded node `(c, r)`.
+    /// The field value (> 0 is inside) of padded node `(c, r)`.
     fn value(&self, c: usize, r: usize) -> f64 {
         if c == 0 || r == 0 || c == self.w - 1 || r == self.h - 1 {
             return -1e-3;
         }
         let i = self.grid.index(c - 1, r - 1);
-        self.grid.height[i] - self.grid.sea_level
+        self.values[i]
     }
 
     /// Map-pixel position of padded node `(c, r)`.
@@ -108,10 +110,13 @@ fn link(adj: &mut [[u32; 2]], a: u32, b: u32) {
     }
 }
 
-/// Traces every coastline and lake shore as raw (unsimplified) rings.
-fn trace_rings(grid: &TerrainGrid) -> Vec<(Vec<Point>, bool)> {
+/// Traces every outline of the region where `values > 0` as raw
+/// (unsimplified) rings; `true` marks an outer ring (inside on its inside).
+/// For the coast the values are height minus sea level.
+fn trace_rings(grid: &TerrainGrid, values: &[f64]) -> Vec<(Vec<Point>, bool)> {
     let pad = Padded {
         grid,
+        values,
         w: grid.cols() + 2,
         h: grid.rows() + 2,
     };
@@ -206,8 +211,18 @@ fn trace_rings(grid: &TerrainGrid) -> Vec<(Vec<Point>, bool)> {
 pub fn coast_polygons(grid: &TerrainGrid) -> Vec<CoastPolygon> {
     let cell = grid.layout.cell;
     let min_area = min_island_cells(grid) as f64 * cell * cell;
+    let values: Vec<f64> = grid.height.iter().map(|h| h - grid.sea_level).collect();
+    field_polygons(grid, &values, min_area)
+}
+
+/// Outlines of the region where `values > 0` (one value per grid node),
+/// simplified to at most `MAX_POINTS` points each, largest first. Rings
+/// smaller than `min_area` (px²) are dropped. `is_land` is true for outer
+/// rings and false for holes. Kingdoms use it with a per-kingdom field.
+pub fn field_polygons(grid: &TerrainGrid, values: &[f64], min_area: f64) -> Vec<CoastPolygon> {
+    let cell = grid.layout.cell;
     let mut out = Vec::new();
-    for (ring, is_land) in trace_rings(grid) {
+    for (ring, is_land) in trace_rings(grid, values) {
         let area = signed_area(&ring).abs();
         if area < min_area {
             continue;

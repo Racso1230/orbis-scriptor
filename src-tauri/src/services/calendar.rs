@@ -338,6 +338,13 @@ fn era_start_index(def: &CalendarDefinition, base: i64, era_index: usize) -> i64
     year_index_of(def, base, def.eras[era_index].start_day - def.epoch_offset)
 }
 
+/// Absolute day number of the first day of year index `year_index` (year
+/// index 0 starts at the epoch). The world generator places its history
+/// with it.
+pub fn year_start_day(def: &CalendarDefinition, year_index: i64) -> i64 {
+    def.epoch_offset + days_before_year(def, days_per_year(def), year_index)
+}
+
 /// The year index containing absolute `day`, and that year's length. Handy
 /// for tests and the shared fixtures.
 pub fn year_info(def: &CalendarDefinition, day: i64) -> AppResult<(i64, i64)> {

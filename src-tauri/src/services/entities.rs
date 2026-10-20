@@ -109,6 +109,21 @@ pub fn create_event(
     create_with_dates(conn, input, start_day, end_day, None)
 }
 
+/// Like [`create_event`] but WITHOUT its own transaction: the caller must
+/// already be inside one (the world generator writes its history events
+/// together with everything else).
+pub fn create_event_in(
+    conn: &Connection,
+    input: NewEntity,
+    start_day: i64,
+    end_day: Option<i64>,
+) -> AppResult<Entity> {
+    if input.entity_type != "event" {
+        return Err(AppError::Validation("Not an event entity".into()));
+    }
+    insert_with_dates(conn, input, start_day, end_day, None)
+}
+
 /// Shared by both functions above. The dates are only used for `event`
 /// entities and ignored for every other type; `blank_map` (size and look) is
 /// only used for `map` entities.

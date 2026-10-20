@@ -814,6 +814,11 @@ export type GeneratePhase =
  *  "places").
  */
 "placing" | 
+/**
+ *  Growing kingdoms, dynasties, history events and lore (scope
+ *  "history").
+ */
+"history" | 
 /**  Saving the background image into the world's `assets/` folder. */
 "rendering" | 
 /**  Writing the map, its layers and objects to the database. */
@@ -829,7 +834,10 @@ export type GenerateProgress = {
 	total: number,
 };
 
-/**  How much of a world to generate. `History` arrives in Phase 14c. */
+/**
+ *  How much of a world to generate. Each scope includes the ones before it:
+ *  `History` (kingdoms, dynasties, events, lore) implies `Places`.
+ */
 export type GenerationScope = "mapOnly" | "places" | "history";
 
 /**  A summary of what was generated, reported to the frontend when done. */
@@ -846,6 +854,14 @@ export type GenerationStats = {
 	settlements: number,
 	/**  Road objects drawn (0 for the map-only scope). */
 	roads: number,
+	/**  Kingdoms (faction entities) created (0 unless the history scope). */
+	kingdoms: number,
+	/**  Rulers and their families (character entities; 0 unless history). */
+	characters: number,
+	/**  Timeline events (0 unless history). */
+	events: number,
+	/**  Lore documents written (0 unless history). */
+	documents: number,
 };
 
 /**  Everything the generator needs. The same params always give the same map. */

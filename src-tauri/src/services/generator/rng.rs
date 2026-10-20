@@ -23,6 +23,14 @@ pub enum Stage {
     Places = 5,
     /// Culture choice and names of settlements and regions (Phase 14b).
     Names = 6,
+    /// Kingdom colours, borders and diplomacy (Phase 14c).
+    Politics = 7,
+    /// Dynasty ages and event dates (Phase 14c).
+    History = 8,
+    /// Wording choices of the lore stubs (Phase 14c).
+    Lore = 9,
+    /// Names of kingdoms, houses and people (Phase 14c).
+    HistoryNames = 10,
 }
 
 /// A reproducible generator for one stage. ChaCha8 is a fast, high-quality

@@ -14,6 +14,9 @@ pub enum GeneratePhase {
     /// Placing settlements, naming them and building roads (scope
     /// "places").
     Placing,
+    /// Growing kingdoms, dynasties, history events and lore (scope
+    /// "history").
+    History,
     /// Saving the background image into the world's `assets/` folder.
     Rendering,
     /// Writing the map, its layers and objects to the database.

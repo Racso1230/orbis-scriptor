@@ -13,17 +13,23 @@
 //! 5. `render`  — background PNG
 //! 6. `places`  — (scope "places") settlements, names (`names`) and roads
 //!    (`roads`, A*)
-//! 7. `plan`    — Terrain / Rivers / Roads / Features / Places layers + stats
+//! 7. `politics`, `history`, `lore` — (scope "history") kingdoms grown from
+//!    the capitals, dynasties, relationships, timeline events and lore
+//! 8. `plan`    — Terrain / Kingdoms / Rivers / Roads / Features / Places
+//!    layers + stats
 
 mod biomes;
 mod climate;
 pub mod coast;
 pub mod fields;
 mod geometry;
+pub mod history;
 mod land_shape;
+pub mod lore;
 pub mod names;
 pub mod places;
 pub mod plan;
+pub mod politics;
 pub mod render;
 pub mod rivers;
 mod rng;
@@ -41,8 +47,10 @@ use crate::models::generator::{GenerationScope, GenerationStats, GeneratorParams
 pub use fields::{GridLayout, TerrainGrid};
 pub use places::{RegionName, Settlement, Tier};
 pub use plan::{
-    GENERATOR_VERSION, GeneratedLayer, GeneratedMap, GeneratedObject, GeneratedPlaces,
-    LAYER_FEATURES, LAYER_PLACES, LAYER_RIVERS, LAYER_ROADS, LAYER_TERRAIN, ObjectRole,
+    EventKind, GENERATOR_VERSION, GeneratedHistory, GeneratedLayer, GeneratedMap, GeneratedObject,
+    GeneratedPlaces, HistDate, HistEvent, Kingdom, LAYER_FEATURES, LAYER_KINGDOMS, LAYER_PLACES,
+    LAYER_RIVERS, LAYER_ROADS, LAYER_TERRAIN, LoreDoc, LoreInline, ObjectRole, PRESENT_YEAR,
+    Person, PersonRole, Ref, Rel,
 };
 pub use roads::{Road, Route};
 pub use stamps::{is_known_stamp, known_stamp_keys};
@@ -54,18 +62,15 @@ pub fn generate_map(params: &GeneratorParams) -> AppResult<GeneratedMap> {
 }
 
 /// [`generate_map`] that reports its stages: `(generating, 0, 1)` …
-/// `(generating, 1, 1)`, then for the places scope `(placing, 0, 1)` …
-/// `(placing, 1, 1)`. Still pure: the callback is the only side effect.
+/// `(generating, 1, 1)`, then for the places and history scopes
+/// `(placing, 0, 1)` … `(placing, 1, 1)`, and for the history scope
+/// `(history, 0, 1)` … `(history, 1, 1)`. Still pure: the callback is the
+/// only side effect.
 pub fn generate_map_with_progress(
     params: &GeneratorParams,
     on_progress: &mut dyn FnMut(GeneratePhase, u32, u32),
 ) -> AppResult<GeneratedMap> {
     params.validate()?;
-    if params.scope == GenerationScope::History {
-        return Err(AppError::Validation(
-            "History generation arrives in 14c".into(),
-        ));
-    }
     on_progress(GeneratePhase::Generating, 0, 1);
     let layout = GridLayout::for_map(params.width, params.height);
     let mut grid = fields::build_grid(params, layout);
@@ -81,21 +86,31 @@ pub fn generate_map_with_progress(
     let background_png = render::encode_png(&image)?;
     on_progress(GeneratePhase::Generating, 1, 1);
 
-    let places = if params.scope == GenerationScope::MapOnly {
-        None
-    } else {
+    let mut places = None;
+    let mut history = None;
+    let mut kingdom_layer = None;
+    if params.scope != GenerationScope::MapOnly {
         on_progress(GeneratePhase::Placing, 0, 1);
-        let places = generate_places(&grid, params);
-        clear_stamps_around(&grid, &mut stamps, &places.settlements);
+        let (mut p, mut names) = generate_places(&grid, params);
+        clear_stamps_around(&grid, &mut stamps, &p.settlements);
         on_progress(GeneratePhase::Placing, 1, 1);
-        Some(places)
-    };
+        if params.scope == GenerationScope::History {
+            on_progress(GeneratePhase::History, 0, 1);
+            let (h, layer) = generate_history(&grid, params, &mut p, &mut names);
+            history = Some(h);
+            kingdom_layer = Some(layer);
+            on_progress(GeneratePhase::History, 1, 1);
+        }
+        places = Some(p);
+    }
 
     let mut stats = stats(&grid, rivers.len(), stamps.len());
-    let mut layers = vec![
-        plan::terrain_layer(&grid, params.climate, polygons),
-        plan::river_layer(&grid, params.climate, &rivers),
-    ];
+    let mut layers = vec![plan::terrain_layer(&grid, params.climate, polygons)];
+    // Kingdoms sit just above the terrain, below rivers, roads and places.
+    if let Some(layer) = kingdom_layer {
+        layers.push(layer);
+    }
+    layers.push(plan::river_layer(&grid, params.climate, &rivers));
     // `if let Some(p) = &places` borrows the value inside the Option
     // without moving it out, so `places` can still go into the plan below.
     if let Some(p) = &places {
@@ -106,6 +121,12 @@ pub fn generate_map_with_progress(
         layers.push(plan::places_layer(&grid, &p.settlements));
         stats.settlements = p.settlements.len() as u32;
         stats.roads = p.roads.len() as u32;
+    }
+    if let Some(h) = &history {
+        stats.kingdoms = h.kingdoms.len() as u32;
+        stats.characters = h.characters.len() as u32;
+        stats.events = h.events.len() as u32;
+        stats.documents = h.documents.len() as u32;
     }
     Ok(GeneratedMap {
         params: params.clone(),
@@ -120,23 +141,58 @@ pub fn generate_map_with_progress(
         grid,
         rivers,
         places,
+        history,
     })
 }
 
-/// Settlements, their names and regions, and the roads between them.
-fn generate_places(grid: &TerrainGrid, params: &GeneratorParams) -> GeneratedPlaces {
+/// Settlements, their names and regions, and the roads between them. Also
+/// returns the name generator, so the history stage can keep every name in
+/// the world unique.
+fn generate_places(
+    grid: &TerrainGrid,
+    params: &GeneratorParams,
+) -> (GeneratedPlaces, names::NameGenerator) {
     let mut place_rng = rng::stage_rng(params.seed, rng::Stage::Places);
     let mut names = names::NameGenerator::new(rng::stage_rng(params.seed, rng::Stage::Names));
     let (settlements, regions, spacing) =
         places::place_settlements(grid, params, &mut place_rng, &mut names);
     let (roads, routes) = roads::build_roads(grid, &settlements);
-    GeneratedPlaces {
+    let places = GeneratedPlaces {
         settlements,
         roads,
         routes,
         regions,
         spacing,
-    }
+    };
+    (places, names)
+}
+
+/// Kingdoms, dynasties, relationships, events and lore (scope "history"),
+/// plus the Kingdoms layer. Updates the settlements' `kingdom` and summary.
+/// Each part draws from its own random stream (see `rng::Stage`).
+fn generate_history(
+    grid: &TerrainGrid,
+    params: &GeneratorParams,
+    places: &mut GeneratedPlaces,
+    names: &mut names::NameGenerator,
+) -> (GeneratedHistory, GeneratedLayer) {
+    let mut politics_rng = rng::stage_rng(params.seed, rng::Stage::Politics);
+    let realms = politics::build_realms(grid, &places.settlements, &mut politics_rng);
+    names.reseed(rng::stage_rng(params.seed, rng::Stage::HistoryNames));
+    let mut history_rng = rng::stage_rng(params.seed, rng::Stage::History);
+    let chronicle = history::build(places, &realms, names, &mut history_rng);
+    let mut lore_rng = rng::stage_rng(params.seed, rng::Stage::Lore);
+    let documents = lore::build_documents(&chronicle, places, &mut lore_rng);
+    let layer = politics::kingdom_layer(grid, &realms);
+    let history = GeneratedHistory {
+        kingdoms: chronicle.kingdoms,
+        characters: chronicle.characters,
+        relationships: chronicle.relationships,
+        events: chronicle.events,
+        documents,
+        territory: realms.owner,
+    };
+    (history, layer)
 }
 
 /// Removes the biome stamps a settlement stamp would sit on.
@@ -208,6 +264,10 @@ fn stats(grid: &TerrainGrid, rivers: usize, stamps: usize) -> GenerationStats {
         biome_counts,
         settlements: 0,
         roads: 0,
+        kingdoms: 0,
+        characters: 0,
+        events: 0,
+        documents: 0,
     }
 }
 
@@ -601,16 +661,47 @@ mod tests {
     }
 
     #[test]
-    fn history_scope_is_not_available_yet() {
+    fn history_scope_reports_placing_then_history() {
         let params = GeneratorParams {
             scope: GenerationScope::History,
             ..small(1)
         };
-        let err = generate_map(&params).unwrap_err();
-        assert!(
-            matches!(&err, AppError::Validation(m) if m.contains("14c")),
-            "{err:?}"
+        let mut phases = Vec::new();
+        let mut record = |p: GeneratePhase, d: u32, t: u32| phases.push((p, d, t));
+        let map = generate_map_with_progress(&params, &mut record).unwrap();
+        assert_eq!(
+            phases,
+            [
+                (GeneratePhase::Generating, 0, 1),
+                (GeneratePhase::Generating, 1, 1),
+                (GeneratePhase::Placing, 0, 1),
+                (GeneratePhase::Placing, 1, 1),
+                (GeneratePhase::History, 0, 1),
+                (GeneratePhase::History, 1, 1),
+            ]
         );
+        let names: Vec<&str> = map.layers.iter().map(|l| l.name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                LAYER_TERRAIN,
+                LAYER_KINGDOMS,
+                LAYER_RIVERS,
+                LAYER_ROADS,
+                LAYER_FEATURES,
+                LAYER_PLACES
+            ]
+        );
+        let h = map.history.as_ref().unwrap();
+        assert_eq!(map.stats.kingdoms as usize, h.kingdoms.len());
+        assert_eq!(map.stats.characters as usize, h.characters.len());
+        assert_eq!(map.stats.events as usize, h.events.len());
+        assert_eq!(map.stats.documents as usize, h.documents.len());
+        assert!(map.stats.kingdoms > 0);
+        // The places scope has no history.
+        let places_only = generate_map(&with_places(small(1))).unwrap();
+        assert!(places_only.history.is_none());
+        assert_eq!(places_only.stats.kingdoms, 0);
     }
 
     #[test]
@@ -988,7 +1079,7 @@ mod tests {
         let mut grid = fields::build_grid(&params, layout);
         rivers::trace_rivers(&mut grid, &mut rng::stage_rng(42, rng::Stage::Rivers));
         let t = std::time::Instant::now();
-        let places = generate_places(&grid, &params);
+        let (places, _) = generate_places(&grid, &params);
         println!(
             "places stage alone {:?} ({} settlements)",
             t.elapsed(),

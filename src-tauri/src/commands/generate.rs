@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::models::generate::{GenerateFinished, GeneratePhase, GenerateProgress};
-use crate::models::generator::{GenerationScope, GeneratorParams};
+use crate::models::generator::GeneratorParams;
 use crate::services::generator::{self, writer};
 use crate::services::world::{ASSETS_DIR, DB_FILE};
 use crate::state::AppState;
@@ -53,11 +53,6 @@ fn preview_base64(params: &GeneratorParams, max_side: u32) -> AppResult<String> 
 /// Checks the request and returns the name the new map will get.
 fn checked_name(params: &GeneratorParams, name: Option<&str>) -> AppResult<String> {
     params.validate()?;
-    if params.scope == GenerationScope::History {
-        return Err(AppError::Validation(
-            "History generation arrives in 14c".into(),
-        ));
-    }
     // `Option::map` + `filter` turn "missing or blank" into `None`.
     let name = name.map(str::trim).filter(|n| !n.is_empty());
     Ok(match name {
@@ -125,7 +120,8 @@ pub fn generate_map(
         };
         // A closure that returns `AppResult` lets us use `?` for every step.
         let mut run = || -> AppResult<(String, generator::GeneratedMap)> {
-            // Reports `generating` and, for the places scope, `placing`.
+            // Reports `generating`, then `placing` (places and history
+            // scopes) and `history` (history scope).
             let plan = generator::generate_map_with_progress(&params, &mut on_progress)?;
             // Our own connection: the app's connection stays free for the
             // UI. WAL mode lets both use the database at the same time.
@@ -165,7 +161,7 @@ pub fn generate_map(
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::models::generator::GenerationStats;
+    use crate::models::generator::{GenerationScope, GenerationStats};
     use std::collections::BTreeMap;
 
     #[test]
@@ -178,14 +174,12 @@ mod tests {
             checked_name(&bad, None),
             Err(AppError::Validation(_))
         ));
-        let later = GeneratorParams {
+        // The history scope is accepted (Phase 14c).
+        let history = GeneratorParams {
             scope: GenerationScope::History,
             ..GeneratorParams::default()
         };
-        assert!(matches!(
-            checked_name(&later, None),
-            Err(AppError::Validation(_))
-        ));
+        assert!(checked_name(&history, None).is_ok());
         assert!(matches!(
             preview_base64(&GeneratorParams::default(), 10),
             Err(AppError::Validation(_))
@@ -270,6 +264,10 @@ mod tests {
                 biome_counts,
                 settlements: 12,
                 roads: 9,
+                kingdoms: 3,
+                characters: 17,
+                events: 11,
+                documents: 9,
             }),
             error: None,
         };
@@ -278,9 +276,17 @@ mod tests {
         assert_eq!(json["stats"]["landMasses"], 2);
         assert_eq!(json["stats"]["biomeCounts"]["ocean"], 10);
         assert_eq!(json["stats"]["settlements"], 12);
+        assert_eq!(json["stats"]["kingdoms"], 3);
+        assert_eq!(json["stats"]["characters"], 17);
+        assert_eq!(json["stats"]["events"], 11);
+        assert_eq!(json["stats"]["documents"], 9);
         assert_eq!(
             serde_json::to_value(GeneratePhase::Placing).unwrap(),
             "placing"
+        );
+        assert_eq!(
+            serde_json::to_value(GeneratePhase::History).unwrap(),
+            "history"
         );
         let back: GenerateFinished = serde_json::from_value(json).unwrap();
         assert_eq!(back, finished);
