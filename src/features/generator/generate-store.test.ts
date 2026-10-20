@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { GenerateFinished, GenerateProgress, GeneratorParams } from "@/lib/bindings";
-import { GENERATE_IDLE } from "./generate-state";
+import { GENERATE_IDLE, type GenerationPhase, type PlacesStats } from "./generate-state";
 import { startGeneration, useGenerateStore } from "./generate-store";
 import { defaultParams } from "./wizard-model";
 
@@ -47,13 +47,20 @@ const progress = (jobId: string, done: number): GenerateProgress => ({
   done,
   total: 4,
 });
+const STATS: PlacesStats = {
+  landPercentActual: 40,
+  landMasses: 1,
+  rivers: 5,
+  stamps: 50,
+  biomeCounts: {},
+  settlements: 0,
+  roads: 0,
+};
 const finished = (jobId: string, ok: boolean): GenerateFinished => ({
   jobId,
   ok,
   mapEntityId: ok ? "map-1" : null,
-  stats: ok
-    ? { landPercentActual: 40, landMasses: 1, rivers: 5, stamps: 50, biomeCounts: {} }
-    : null,
+  stats: ok ? STATS : null,
   error: ok ? null : "nope",
 });
 const emit = {
@@ -70,6 +77,7 @@ describe("startGeneration", () => {
       dialogOpen: false,
       openCount: 0,
       lastParams: null,
+      lastScope: null,
     });
   });
 
@@ -95,7 +103,32 @@ describe("startGeneration", () => {
     expect(h.unlistenFinished).toHaveBeenCalled();
     expect(h.invalidate).toHaveBeenCalledWith({ queryKey: ["entities"] });
     expect(h.invalidate).toHaveBeenCalledWith({ queryKey: ["maps"] });
+    expect(h.invalidate).toHaveBeenCalledWith({ queryKey: ["search"] });
     expect(h.toastSuccess).toHaveBeenCalled();
+  });
+
+  it("sends a places job as is and follows its placing progress", async () => {
+    h.generateMap.mockResolvedValue({ status: "ok", data: "job-4" });
+    const params: GeneratorParams = { ...PARAMS, scope: "places", kingdoms: 3 };
+    await startGeneration(params, null);
+    expect(h.generateMap).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: "places", kingdoms: 3 }),
+      null,
+    );
+    expect(useGenerateStore.getState().lastScope).toBe("places");
+    // `as GenerateProgress`: "placing" is new in Phase 14b bindings.
+    emit.progress({
+      jobId: "job-4",
+      phase: "placing" as GenerationPhase,
+      done: 1,
+      total: 2,
+    } as GenerateProgress);
+    expect(useGenerateStore.getState().state).toMatchObject({
+      status: "running",
+      scope: "places",
+      phase: "placing",
+      done: 1,
+    });
   });
 
   it("handles a job that finishes before the command returns", async () => {
@@ -133,12 +166,14 @@ describe("startGeneration", () => {
     useGenerateStore.setState({
       state: { ...GENERATE_IDLE, status: "finished" },
       lastParams: PARAMS,
+      lastScope: "places",
     });
     useGenerateStore.getState().openDialog();
     const s = useGenerateStore.getState();
     expect(s.dialogOpen).toBe(true);
     expect(s.state).toEqual(GENERATE_IDLE);
     expect(s.lastParams).toBeNull();
+    expect(s.lastScope).toBe("places");
     expect(s.openCount).toBe(1);
   });
 });

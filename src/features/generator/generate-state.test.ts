@@ -1,24 +1,28 @@
 import { describe, expect, it } from "vitest";
-import type { GenerateFinished, GenerateProgress, GenerationStats } from "@/lib/bindings";
+import type { GenerateFinished } from "@/lib/bindings";
 import {
   GENERATE_IDLE,
   generateFraction,
   generateReducer,
+  GENERATE_PHASE_LABELS,
   type GenerateAction,
   type GenerateState,
+  type GenerationPhase,
+  type PlacesStats,
 } from "./generate-state";
 
-const STATS: GenerationStats = {
+const STATS: PlacesStats = {
   landPercentActual: 41.2,
   landMasses: 3,
   rivers: 12,
   stamps: 340,
   biomeCounts: { ocean: 100 },
+  settlements: 24,
+  roads: 30,
 };
-const progress = (jobId: string, phase: GenerateProgress["phase"], done: number, total = 4) => ({
-  type: "progress" as const,
-  event: { jobId, phase, done, total },
-});
+// `as GenerateAction` so "placing" is accepted before the bindings know it.
+const progress = (jobId: string, phase: GenerationPhase, done: number, total = 4) =>
+  ({ type: "progress", event: { jobId, phase, done, total } }) as GenerateAction;
 const finished = (jobId: string, ok: boolean): GenerateAction => ({
   type: "finished",
   event: {
@@ -66,6 +70,16 @@ describe("generateReducer", () => {
     expect(run([{ type: "reset" }], failed)).toEqual(GENERATE_IDLE);
   });
 
+  it("follows the placing phase of a places job", () => {
+    const s = run([
+      { type: "begin", scope: "places" },
+      { type: "started", jobId: "a" },
+      progress("a", "placing", 1, 2),
+    ]);
+    expect(s).toMatchObject({ status: "running", scope: "places", phase: "placing", done: 1 });
+    expect(run([{ type: "begin" }]).scope).toBe("mapOnly");
+  });
+
   it("ignores events when not running", () => {
     expect(run([progress("a", "writing", 1)])).toEqual(GENERATE_IDLE);
   });
@@ -73,7 +87,7 @@ describe("generateReducer", () => {
 
 describe("generateFraction", () => {
   it("rises through the phases", () => {
-    const at = (phase: GenerateProgress["phase"], done: number, total: number) =>
+    const at = (phase: GenerationPhase, done: number, total: number) =>
       generateFraction(
         run([
           { type: "begin" },
@@ -87,5 +101,28 @@ describe("generateFraction", () => {
     expect(at("writing", 5, 10)).toBeCloseTo(0.8);
     expect(generateFraction(GENERATE_IDLE)).toBe(0);
     expect(generateFraction({ ...GENERATE_IDLE, status: "finished" })).toBe(1);
+  });
+
+  it("makes room for placing in a places job", () => {
+    const at = (phase: GenerationPhase, done: number, total: number) =>
+      generateFraction(
+        run([
+          { type: "begin", scope: "places" },
+          { type: "started", jobId: "a" },
+          progress("a", phase, done, total),
+        ]),
+      );
+    expect(at("generating", 1, 1)).toBeCloseTo(0.35);
+    expect(at("placing", 0, 2)).toBeCloseTo(0.35);
+    expect(at("placing", 1, 2)).toBeCloseTo(0.425);
+    expect(at("placing", 2, 2)).toBeCloseTo(0.5);
+    expect(at("rendering", 1, 1)).toBeCloseTo(0.6);
+    expect(at("writing", 5, 10)).toBeCloseTo(0.8);
+  });
+});
+
+describe("GENERATE_PHASE_LABELS", () => {
+  it("describes the placing phase", () => {
+    expect(GENERATE_PHASE_LABELS.placing).toBe("Placing settlements and roads…");
   });
 });

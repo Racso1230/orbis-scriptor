@@ -9,7 +9,9 @@ import {
   presetFor,
   randomSeed,
   rerollSeed,
+  SCOPES,
   SEED_MAX,
+  usesKingdoms,
 } from "./wizard-model";
 
 describe("wizard model", () => {
@@ -64,6 +66,28 @@ describe("wizard model", () => {
     expect(paramsProblem({ ...ok, rainfall: -1.01 })).toMatch(/Rainfall/);
     expect(paramsProblem({ ...ok, seed: -1 })).toMatch(/Seed/);
     expect(paramsProblem({ ...ok, seed: SEED_MAX + 1 })).toMatch(/Seed/);
+  });
+
+  it("offers map only and places, with history listed but disabled", () => {
+    expect(SCOPES.map((s) => [s.value, Boolean(s.disabled)])).toEqual([
+      ["mapOnly", false],
+      ["places", false],
+      ["history", true],
+    ]);
+    expect(defaultParams(1, "places").scope).toBe("places");
+    expect(usesKingdoms("mapOnly")).toBe(false);
+    expect(usesKingdoms("places")).toBe(true);
+  });
+
+  it("validates kingdoms 1-12 for places and rejects history", () => {
+    const places = defaultParams(1, "places");
+    expect(paramsProblem({ ...places, kingdoms: 1 })).toBeNull();
+    expect(paramsProblem({ ...places, kingdoms: 12 })).toBeNull();
+    expect(paramsProblem({ ...places, kingdoms: 0 })).toMatch(/kingdoms must be between 1 and 12/);
+    expect(paramsProblem({ ...places, kingdoms: 13 })).toMatch(/kingdoms/);
+    expect(paramsProblem({ ...places, kingdoms: 2.5 })).toMatch(/kingdoms/);
+    expect(paramsProblem({ ...places, kingdoms: Number.NaN })).toMatch(/kingdoms/);
+    expect(paramsProblem({ ...places, scope: "history" })).toMatch(/14c/);
   });
 
   it("formats slider offsets", () => {

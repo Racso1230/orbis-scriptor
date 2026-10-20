@@ -1,6 +1,6 @@
 import { toast } from "sonner";
 import { create } from "zustand";
-import { commands, events, type GeneratorParams } from "@/lib/bindings";
+import { commands, events, type GenerationScope, type GeneratorParams } from "@/lib/bindings";
 import { queryClient } from "@/lib/query-client";
 import { unwrap } from "@/lib/unwrap";
 import {
@@ -20,6 +20,11 @@ interface GenerateStore {
    * another" starts from them (a fresh open starts from new random settings).
    */
   lastParams: GeneratorParams | null;
+  /**
+   * Scope of the last generation. Unlike `lastParams` it survives a fresh
+   * open, so someone who generates places keeps getting places by default.
+   */
+  lastScope: GenerationScope | null;
   setDialogOpen: (open: boolean) => void;
   /** Opens the wizard; a finished or failed job is cleared, a running one is kept. */
   openDialog: () => void;
@@ -31,6 +36,7 @@ export const useGenerateStore = create<GenerateStore>()((set) => ({
   dialogOpen: false,
   openCount: 0,
   lastParams: null,
+  lastScope: null,
   setDialogOpen: (dialogOpen) => set({ dialogOpen }),
   openDialog: () =>
     set((s) => ({
@@ -44,7 +50,10 @@ export const useGenerateStore = create<GenerateStore>()((set) => ({
 
 type Unlisten = () => void;
 
-/** A new map changes the entity list, tags (`generated`), search and the maps. */
+/**
+ * A new map changes the entity list (generated locations show in the sidebar),
+ * tags (`generated`), search (settlements are found by name) and the maps.
+ */
 function invalidateAfterGenerate() {
   return Promise.all(
     [["entities"], ["tags"], ["search"], ["maps"]].map((queryKey) =>
@@ -65,8 +74,8 @@ export async function startGeneration(params: GeneratorParams, name: string | nu
   const { dispatch } = useGenerateStore.getState();
   if (useGenerateStore.getState().state.status === "running") return;
 
-  useGenerateStore.setState({ lastParams: params });
-  dispatch({ type: "begin" });
+  useGenerateStore.setState({ lastParams: params, lastScope: params.scope });
+  dispatch({ type: "begin", scope: params.scope });
   const unlisteners: Unlisten[] = [];
   let cleaned = false;
   const cleanup = () => {

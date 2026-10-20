@@ -2,7 +2,7 @@ import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GenerateFinished, GenerateProgress } from "@/lib/bindings";
 import { renderWithQuery } from "@/test/render";
-import { GENERATE_IDLE } from "./generate-state";
+import { GENERATE_IDLE, type GenerationPhase, type PlacesStats } from "./generate-state";
 import { useGenerateStore } from "./generate-store";
 import { GenerateWizard } from "./generate-wizard";
 
@@ -65,6 +65,7 @@ describe("GenerateWizard", () => {
       dialogOpen: false,
       openCount: 0,
       lastParams: null,
+      lastScope: null,
     });
     h.previewGeneration.mockResolvedValue(ok("AAAA"));
     h.generateMap.mockResolvedValue(ok("job-1"));
@@ -77,9 +78,11 @@ describe("GenerateWizard", () => {
     expect(screen.getByLabelText<HTMLSelectElement>("Map size").value).toBe("medium");
     expect(screen.getByLabelText<HTMLSelectElement>("Land shape").value).toBe("continent");
     expect(screen.getByLabelText<HTMLSelectElement>("Climate").value).toBe("temperate");
+    expect(screen.getByLabelText<HTMLSelectElement>("Scope").value).toBe("mapOnly");
+    expect(screen.getByLabelText("Scope")).toBeEnabled();
+    expect(screen.getByRole("option", { name: "Map + places + history" })).toBeDisabled();
     expect(screen.getByLabelText("Kingdoms")).toBeDisabled();
-    expect(screen.getByLabelText("Scope")).toBeDisabled();
-    expect(screen.getByText("Places and history arrive in 14b/14c.")).toBeInTheDocument();
+    expect(screen.getByText(/History arrives in 14c/)).toBeInTheDocument();
 
     const img = await screen.findByRole<HTMLImageElement>("img", { name: "Terrain preview" });
     expect(img.src).toBe("data:image/png;base64,AAAA");
@@ -149,11 +152,20 @@ describe("GenerateWizard", () => {
     expect(screen.getByRole("progressbar", { name: "Generation progress" })).toBeInTheDocument();
     expect(screen.getByText(/Writing the map to the world… 2 \/ 5/)).toBeInTheDocument();
 
+    const stats: PlacesStats = {
+      landPercentActual: 38.5,
+      landMasses: 11,
+      rivers: 7,
+      stamps: 120,
+      biomeCounts: {},
+      settlements: 0,
+      roads: 0,
+    };
     const f: GenerateFinished = {
       jobId: "job-1",
       ok: true,
       mapEntityId: "map-9",
-      stats: { landPercentActual: 38.5, landMasses: 11, rivers: 7, stamps: 120, biomeCounts: {} },
+      stats,
       error: null,
     };
     act(() => h.finished?.({ payload: f }));
@@ -161,10 +173,79 @@ describe("GenerateWizard", () => {
     expect(result).toHaveTextContent("Generated a map with 11 land masses.");
     expect(result).toHaveTextContent("38.5 %");
     expect(result).toHaveTextContent("120");
+    expect(result).not.toHaveTextContent("Settlements");
 
     fireEvent.click(screen.getByRole("button", { name: "Open map" }));
     expect(h.openEntity).toHaveBeenCalledWith("map-9");
     expect(useGenerateStore.getState().dialogOpen).toBe(false);
+  });
+
+  it("generates places with the chosen kingdoms and shows settlements and roads", async () => {
+    openWizard();
+    fireEvent.change(await screen.findByLabelText("Seed"), { target: { value: "7" } });
+    fireEvent.change(screen.getByLabelText("Scope"), { target: { value: "places" } });
+    const kingdoms = screen.getByLabelText<HTMLInputElement>("Kingdoms");
+    expect(kingdoms).toBeEnabled();
+    expect(
+      screen.getByText(
+        "Kingdoms = number of capital cities (places); factions and history arrive in 14c.",
+      ),
+    ).toBeInTheDocument();
+
+    fireEvent.change(kingdoms, { target: { value: "13" } });
+    expect(screen.getByRole("alert")).toHaveTextContent(/kingdoms must be between 1 and 12/);
+    expect(screen.getByRole("button", { name: "Generate" })).toBeDisabled();
+    fireEvent.change(kingdoms, { target: { value: "3" } });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+
+    await waitFor(() =>
+      expect(h.generateMap).toHaveBeenCalledWith(
+        expect.objectContaining({ seed: 7, kingdoms: 3, scope: "places" }),
+        null,
+      ),
+    );
+    await waitFor(() => expect(useGenerateStore.getState().state.jobId).toBe("job-1"));
+
+    const placing = { jobId: "job-1", phase: "placing" as GenerationPhase, done: 1, total: 2 };
+    act(() => h.progress?.({ payload: placing }));
+    expect(screen.getByText("Placing settlements and roads…")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "43");
+
+    const stats: PlacesStats = {
+      landPercentActual: 40,
+      landMasses: 1,
+      rivers: 9,
+      stamps: 200,
+      biomeCounts: {},
+      settlements: 18,
+      roads: 21,
+    };
+    const f: GenerateFinished = {
+      jobId: "job-1",
+      ok: true,
+      mapEntityId: "map-2",
+      stats,
+      error: null,
+    };
+    act(() => h.finished?.({ payload: f }));
+    const result = screen.getByRole("region", { name: "Generation result" });
+    expect(result).toHaveTextContent("Generated a map with 1 land mass and 18 settlements.");
+    expect(document.getElementById("generate-result-settlements")).toHaveTextContent(
+      "Settlements18",
+    );
+    expect(document.getElementById("generate-result-roads")).toHaveTextContent("Roads21");
+    expect(result).toHaveTextContent(
+      "Locations are in the sidebar under Locations; pins open them.",
+    );
+    expect(useGenerateStore.getState().lastScope).toBe("places");
+  });
+
+  it("starts with the last used scope when opened again", async () => {
+    useGenerateStore.setState({ lastScope: "places" });
+    openWizard();
+    expect(await screen.findByLabelText<HTMLSelectElement>("Scope")).toHaveValue("places");
+    expect(screen.getByLabelText("Kingdoms")).toBeEnabled();
   });
 
   it("shows the error of a failed generation", async () => {

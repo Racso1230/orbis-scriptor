@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { useOpenEntity } from "@/features/entities/use-open-entity";
-import type { Climate, GeneratorParams, LandShape } from "@/lib/bindings";
+import type { Climate, GenerationScope, GeneratorParams, LandShape } from "@/lib/bindings";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
 import { GENERATE_PHASE_LABELS, generateFraction } from "./generate-state";
 import { startGeneration, useGenerateStore } from "./generate-store";
@@ -24,6 +24,8 @@ import {
   CUSTOM_SIZE,
   defaultParams,
   formatOffset,
+  KINGDOMS_MAX,
+  KINGDOMS_MIN,
   LAND_MAX,
   LAND_MIN,
   LAND_SHAPES,
@@ -33,8 +35,10 @@ import {
   presetFor,
   PREVIEW_DEBOUNCE_MS,
   rerollSeed,
+  SCOPES,
   SEED_MAX,
   SIZE_PRESETS,
+  usesKingdoms,
 } from "./wizard-model";
 
 /** Mounted once in the world layout; opened from the gear menu, the palette and the welcome page. */
@@ -78,24 +82,29 @@ const SEED_PROBLEM = `Seed must be a whole number from 0 to ${SEED_MAX}`;
 
 function SettingsView({ onClose }: { onClose: () => void }) {
   // `useState(() => ...)` runs the initialiser once, so the random seed is picked only on open.
-  const [base, setBase] = useState<GeneratorParams>(
-    () => useGenerateStore.getState().lastParams ?? defaultParams(),
-  );
+  const [base, setBase] = useState<GeneratorParams>(() => {
+    const store = useGenerateStore.getState();
+    return store.lastParams ?? defaultParams(undefined, store.lastScope ?? "mapOnly");
+  });
   const [seedText, setSeedText] = useState(() => String(base.seed));
   const [sizeChoice, setSizeChoice] = useState(() => presetFor(base.width, base.height));
   const [widthText, setWidthText] = useState(() => String(base.width));
   const [heightText, setHeightText] = useState(() => String(base.height));
+  const [kingdomsText, setKingdomsText] = useState(() => String(base.kingdoms));
   const [name, setName] = useState("");
 
   const seed = parseSeed(seedText);
   const preset = SIZE_PRESETS.find((p) => p.id === sizeChoice);
   const width = preset ? preset.width : parseSize(widthText);
   const height = preset ? preset.height : parseSize(heightText);
+  const kingdomsEnabled = usesKingdoms(base.scope);
+  // Map only ignores the field (it is disabled), so keep the last valid number.
+  const kingdoms = kingdomsEnabled ? parseSize(kingdomsText) : base.kingdoms;
 
   // Memoised so the debounced preview only restarts when a setting really changes.
   const params = useMemo<GeneratorParams>(
-    () => ({ ...base, seed: seed ?? -1, width, height }),
-    [base, seed, width, height],
+    () => ({ ...base, seed: seed ?? -1, width, height, kingdoms }),
+    [base, seed, width, height, kingdoms],
   );
   const problem = seed === null ? SEED_PROBLEM : paramsProblem(params);
   const debounced = useDebouncedValue(problem ? null : params, PREVIEW_DEBOUNCE_MS);
@@ -113,6 +122,20 @@ function SettingsView({ onClose }: { onClose: () => void }) {
     }
   }
 
+  function changeKingdoms(text: string) {
+    setKingdomsText(text);
+    const value = parseSize(text);
+    if (Number.isInteger(value) && value >= KINGDOMS_MIN && value <= KINGDOMS_MAX) {
+      update({ kingdoms: value });
+    }
+  }
+
+  function chooseScope(scope: GenerationScope) {
+    update({ scope });
+    // Back to map only: show the number that will actually be sent.
+    if (!usesKingdoms(scope)) setKingdomsText(String(base.kingdoms));
+  }
+
   function generate() {
     if (problem) return;
     void startGeneration(params, name.trim() || null);
@@ -123,8 +146,8 @@ function SettingsView({ onClose }: { onClose: () => void }) {
       <DialogHeader>
         <DialogTitle>Generate map</DialogTitle>
         <DialogDescription>
-          Creates a new map with land, sea, rivers and biome stamps. The same seed and settings
-          always give the same map.
+          Creates a new map with land, sea, rivers and biome stamps (and, with places, settlements
+          and roads). The same seed and settings always give the same map.
         </DialogDescription>
       </DialogHeader>
 
@@ -257,17 +280,34 @@ function SettingsView({ onClose }: { onClose: () => void }) {
           />
 
           <div className="grid grid-cols-2 gap-2">
-            <Field label="Kingdoms" htmlFor="generate-kingdoms">
-              <Input id="generate-kingdoms" value={base.kingdoms} disabled readOnly />
-            </Field>
             <Field label="Scope" htmlFor="generate-scope">
-              <NativeSelect id="generate-scope" value={base.scope} disabled>
-                <option value="mapOnly">Map only</option>
+              <NativeSelect
+                id="generate-scope"
+                value={base.scope}
+                onChange={(e) => chooseScope(e.target.value as GenerationScope)}
+              >
+                {SCOPES.map((s) => (
+                  <option key={s.value} value={s.value} disabled={s.disabled}>
+                    {s.label}
+                  </option>
+                ))}
               </NativeSelect>
             </Field>
+            <Field label="Kingdoms" htmlFor="generate-kingdoms">
+              <Input
+                id="generate-kingdoms"
+                inputMode="numeric"
+                value={kingdomsText}
+                disabled={!kingdomsEnabled}
+                aria-invalid={kingdomsEnabled && !Number.isInteger(kingdoms)}
+                onChange={(e) => changeKingdoms(e.target.value)}
+              />
+            </Field>
           </div>
-          <p className="-mt-2 text-xs text-muted-foreground">
-            Places and history arrive in 14b/14c.
+          <p id="generate-scope-hint" className="-mt-2 text-xs text-muted-foreground">
+            {kingdomsEnabled
+              ? "Kingdoms = number of capital cities (places); factions and history arrive in 14c."
+              : "Choose “Map + places” to add settlements and roads. History arrives in 14c."}
           </p>
         </div>
 
@@ -348,9 +388,9 @@ function SliderField(props: {
   );
 }
 
-function Stat({ label, value }: { label: string; value: ReactNode }) {
+function Stat({ id, label, value }: { id?: string; label: string; value: ReactNode }) {
   return (
-    <div className="rounded-md border px-3 py-2">
+    <div id={id} className="rounded-md border px-3 py-2">
       <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className="font-medium tabular-nums">{value}</dd>
     </div>
@@ -361,6 +401,9 @@ function RunView({ onClose, onBack }: { onClose: () => void; onBack: () => void 
   const run = useGenerateStore((s) => s.state);
   const openEntity = useOpenEntity();
   const fraction = generateFraction(run);
+  const stats = run.result?.stats;
+  const settlements = stats?.settlements ?? 0;
+  const roads = stats?.roads ?? 0;
   const running = run.status === "running";
 
   function openMap() {
@@ -405,22 +448,36 @@ function RunView({ onClose, onBack }: { onClose: () => void; onBack: () => void 
             </p>
           </>
         )}
-        {run.status === "finished" && run.result && (
+        {run.status === "finished" && stats && (
           <section
             id="generate-result"
             aria-label="Generation result"
             className="flex flex-col gap-2"
           >
             <p role="status" className="text-sm">
-              Generated a map with {run.result.stats.landMasses}{" "}
-              {run.result.stats.landMasses === 1 ? "land mass" : "land masses"}.
+              Generated a map with {stats.landMasses}{" "}
+              {stats.landMasses === 1 ? "land mass" : "land masses"}
+              {settlements > 0 &&
+                ` and ${settlements} ${settlements === 1 ? "settlement" : "settlements"}`}
+              .
             </p>
             <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
-              <Stat label="Land" value={`${run.result.stats.landPercentActual} %`} />
-              <Stat label="Land masses" value={run.result.stats.landMasses} />
-              <Stat label="Rivers" value={run.result.stats.rivers} />
-              <Stat label="Stamps" value={run.result.stats.stamps} />
+              <Stat label="Land" value={`${stats.landPercentActual} %`} />
+              <Stat label="Land masses" value={stats.landMasses} />
+              <Stat label="Rivers" value={stats.rivers} />
+              <Stat label="Stamps" value={stats.stamps} />
+              {settlements > 0 && (
+                <>
+                  <Stat id="generate-result-settlements" label="Settlements" value={settlements} />
+                  <Stat id="generate-result-roads" label="Roads" value={roads} />
+                </>
+              )}
             </dl>
+            {settlements > 0 && (
+              <p id="generate-result-places-hint" className="text-xs text-muted-foreground">
+                Locations are in the sidebar under Locations; pins open them.
+              </p>
+            )}
           </section>
         )}
         {run.status === "failed" && (

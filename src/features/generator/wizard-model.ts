@@ -1,4 +1,4 @@
-import type { Climate, GeneratorParams, LandShape } from "@/lib/bindings";
+import type { Climate, GenerationScope, GeneratorParams, LandShape } from "@/lib/bindings";
 
 // Keep in sync with `GeneratorParams::validate` and the map size limits in Rust.
 export const MIN_MAP_SIZE = 256;
@@ -44,6 +44,17 @@ export const CLIMATES: { value: Climate; label: string }[] = [
   { value: "volcanic", label: "Volcanic" },
 ];
 
+export const SCOPES: { value: GenerationScope; label: string; disabled?: boolean }[] = [
+  { value: "mapOnly", label: "Map only" },
+  { value: "places", label: "Map + places" },
+  { value: "history", label: "Map + places + history", disabled: true },
+];
+
+/** Kingdoms only matter once places are generated (they set the number of capitals). */
+export function usesKingdoms(scope: GenerationScope): boolean {
+  return scope !== "mapOnly";
+}
+
 /** A random seed in 0..=SEED_MAX. `random` is injectable for tests. */
 export function randomSeed(random: () => number = Math.random): number {
   return Math.floor(random() * (SEED_MAX + 1)) % (SEED_MAX + 1);
@@ -55,8 +66,15 @@ export function rerollSeed(current: number, random: () => number = Math.random):
   return next === current ? (next + 1) % (SEED_MAX + 1) : next;
 }
 
-/** The wizard's starting settings: a medium continent with a random seed. */
-export function defaultParams(seed: number = randomSeed()): GeneratorParams {
+/**
+ * The wizard's starting settings: a medium continent with a random seed.
+ * `scope` defaults to map only (like `GeneratorParams::default` in Rust); the
+ * wizard passes the last used scope instead.
+ */
+export function defaultParams(
+  seed: number = randomSeed(),
+  scope: GenerationScope = "mapOnly",
+): GeneratorParams {
   return {
     seed,
     width: 4000,
@@ -67,7 +85,7 @@ export function defaultParams(seed: number = randomSeed()): GeneratorParams {
     temperature: 0,
     rainfall: 0,
     kingdoms: 5,
-    scope: "mapOnly",
+    scope,
   };
 }
 
@@ -106,9 +124,11 @@ export function paramsProblem(params: GeneratorParams): string | null {
   if (!inRange(params.landPercent, LAND_MIN, LAND_MAX)) {
     return `Land must be between ${LAND_MIN} and ${LAND_MAX} percent`;
   }
-  if (!inRange(params.kingdoms, KINGDOMS_MIN, KINGDOMS_MAX)) {
+  // Rust checks the kingdoms for every scope; with places they set the number of capitals.
+  if (!Number.isInteger(params.kingdoms) || !inRange(params.kingdoms, KINGDOMS_MIN, KINGDOMS_MAX)) {
     return `Number of kingdoms must be between ${KINGDOMS_MIN} and ${KINGDOMS_MAX}`;
   }
+  if (params.scope === "history") return "History generation arrives in Phase 14c";
   if (!inRange(params.temperature, -1, 1)) return "Temperature must be between -1 and 1";
   if (!inRange(params.rainfall, -1, 1)) return "Rainfall must be between -1 and 1";
   return null;
