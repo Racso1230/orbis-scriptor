@@ -42,11 +42,26 @@ describe("WelcomePage", () => {
     commands.removeRecentWorld.mockResolvedValue(ok(null));
   });
 
+  it("shows the brand logo and wordmark heading", async () => {
+    renderWithQuery(<WelcomePage />);
+
+    expect(screen.getByTestId("brand-logo")).toHaveAttribute("alt", "Orbis Scriptor");
+    expect(screen.getByRole("heading", { level: 1, name: "Orbis Scriptor" })).toBeInTheDocument();
+    expect(await screen.findByText("Orbis Scriptor 0.1.0")).toBeInTheDocument();
+  });
+
+  it("shows a friendly empty state with no recent worlds", async () => {
+    commands.listRecentWorlds.mockResolvedValue(ok([]));
+    renderWithQuery(<WelcomePage />);
+
+    expect(await screen.findByText(/No recent worlds yet/)).toBeInTheDocument();
+  });
+
   it("lists recent worlds and disables unavailable ones", async () => {
     renderWithQuery(<WelcomePage />);
 
     expect(await screen.findByText("Aerth")).toBeInTheDocument();
-    expect(screen.getByText("(unavailable)")).toBeInTheDocument();
+    expect(screen.getByText("unavailable")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Lost/ })).toBeDisabled();
     expect(screen.getByRole("button", { name: /^Aerth/ })).toBeEnabled();
   });

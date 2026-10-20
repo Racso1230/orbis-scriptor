@@ -2,12 +2,20 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+/* Cinzel: display serif for the brand wordmark only (latin subset, two weights). */
+@import "@fontsource/cinzel/latin-500.css";
+@import "@fontsource/cinzel/latin-700.css";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: "Geist Variable", sans-serif;
+  /* Brand display serif. Separate from --font-heading, which shadcn components use. */
+  --font-brand: "Cinzel", Georgia, serif;
+  --color-brand-navy: var(--brand-navy);
+  --color-brand-navy-foreground: var(--brand-navy-foreground);
+  --color-brand-gold: var(--brand-gold);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -81,6 +89,12 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  /* Brand colours from the app icon (navy #1f3a6b, gold #c9a74a). The light-mode gold
+     is a shade darker so hairlines and glyphs read on white. */
+  --brand-navy: oklch(0.36 0.085 262);
+  --brand-navy-foreground: oklch(0.94 0.055 92);
+  --brand-gold: oklch(0.64 0.12 85);
+  --brand-glow: oklch(0.95 0.035 85);
 }
 
 .dark {
@@ -115,6 +129,10 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  --brand-navy: oklch(0.4 0.095 262);
+  --brand-navy-foreground: oklch(0.94 0.055 92);
+  --brand-gold: oklch(0.79 0.12 87);
+  --brand-glow: oklch(0.27 0.06 262);
 }
 
 @layer base {
@@ -127,6 +145,28 @@
   html {
     @apply font-sans;
   }
+}
+
+/* --- Welcome screen ------------------------------------------------------- */
+/* Soft glow from the top-left: parchment in light mode, navy in dark mode. */
+.brand-backdrop {
+  background:
+    radial-gradient(ellipse 80% 70% at 15% 0%, var(--brand-glow), transparent 70%),
+    radial-gradient(
+      ellipse 60% 60% at 100% 100%,
+      color-mix(in oklch, var(--brand-glow) 60%, transparent),
+      transparent 70%
+    ),
+    var(--background);
+}
+/* Thin gold rule that fades out to the right. */
+.brand-hairline {
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    var(--brand-gold),
+    color-mix(in oklch, var(--brand-gold) 0%, transparent)
+  );
 }
 
 /* --- Lore editor (TipTap/ProseMirror) ------------------------------------- */

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>Orbis Scriptor</title>
+  <defs>
+    <radialGradient id="sea" cx="40%" cy="35%" r="80%">
+      <stop offset="0" stop-color="#34508f"/>
+      <stop offset="1" stop-color="#16214a"/>
+    </radialGradient>
+  </defs>
+  <!-- globe disc with gold rim -->
+  <circle cx="512" cy="512" r="480" fill="url(#sea)" stroke="#e3b64f" stroke-width="40"/>
+  <!-- meridian and equator lines -->
+  <g fill="none" stroke="#e3b64f" stroke-opacity="0.35" stroke-width="16">
+    <ellipse cx="512" cy="512" rx="230" ry="440"/>
+    <line x1="72" y1="512" x2="952" y2="512"/>
+  </g>
+  <!-- compass rose: long N/S/E/W points -->
+  <path fill="#f6e7b8" d="M512 90 L578 446 L934 512 L578 578 L512 934 L446 578 L90 512 L446 446 Z"/>
+  <!-- shaded half of each point for depth -->
+  <path fill="#e3b64f" d="M512 90 L578 446 L512 512 Z M934 512 L578 578 L512 512 Z M512 934 L446 578 L512 512 Z M90 512 L446 446 L512 512 Z"/>
+  <!-- quill crossing the rose -->
+  <path fill="#ffffff" stroke="#16214a" stroke-width="22" stroke-linejoin="round"
+        d="M830 150 C700 200 560 330 470 520 L420 620 L520 570 C700 480 810 330 830 150 Z"/>
+  <path fill="none" stroke="#16214a" stroke-width="22" stroke-linecap="round" d="M820 170 L330 760"/>
+  <path fill="#16214a" d="M330 760 L300 840 L380 800 Z"/>
+</svg>
