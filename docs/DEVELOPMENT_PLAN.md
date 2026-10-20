@@ -378,23 +378,47 @@ CREATE INDEX idx_events_start ON events(start_day);
 - Stamp keys are defined only in the frontend (`src/features/maps/stamp-library.ts`). Share a key list with Rust (or move the catalogue to Rust) so the generator only uses stamps that exist.
 - Map undo/redo is frontend-only (`map-history.ts`). Generating a whole world does not need undo. Any later in-editor tool, such as "regenerate this region", must return ops to the frontend and run them through `runOps`, so a single Ctrl+Z undoes it.
 
-**UX:** a "Generate world" wizard (welcome page and gear menu): seed (with a dice button), map size, land %, number of kingdoms, and scope (map only / + places / + history). It shows a fast low-resolution preview rendered by Rust with "Reroll", then generates into a new world or as a new map in the open world, with a progress bar and a result summary.
+**Variety:** each seed gives a different world; the same seed **and** the same settings reproduce it exactly (that is what the determinism tests check). Land shape and climate change the overall character of a world, not just its details.
+
+**Land shapes** (each is a set of continent masks the noise is multiplied by):
+
+| Shape               | Result                                                             |
+| ------------------- | ------------------------------------------------------------------ |
+| Continent (default) | One large land mass with a ragged coast and a few offshore islands |
+| Twin continents     | Two or three large land masses separated by sea                    |
+| Archipelago         | Many small and medium islands                                      |
+| Pangaea             | One huge land mass with inland seas and lakes                      |
+| Coastline           | Land along one or two edges, open sea on the rest                  |
+
+**Climate presets** (each is a base temperature, base moisture and colour palette; temperature and rainfall sliders adjust any preset):
+
+| Preset              | Result                                                        |
+| ------------------- | ------------------------------------------------------------- |
+| Temperate (default) | Mixed forests, grassland, snow on the highest peaks           |
+| Frozen              | Tundra, taiga, glaciers, ice shelves, frozen lakes and coasts |
+| Arid                | Deserts, dunes, salt flats, oases along rivers                |
+| Tropical            | Jungle, swamps, mangrove coasts                               |
+| Volcanic            | Ash plains, lava fields, volcanoes                            |
+
+**UX:** a "Generate world" wizard (welcome page and gear menu): seed (random by default, with a dice button), map size, **land shape**, land %, **climate** (preset plus optional temperature and rainfall sliders), number of kingdoms, and scope (map only / + places / + history). It shows a fast low-resolution preview rendered by Rust with "Reroll", then generates into a new world or as a new map in the open world, with a progress bar and a result summary.
 
 #### 14a — Terrain map
 
-- [ ] Seeded RNG wrapper and generator params model (`GeneratorParams`, validated: size within map limits, land 10–90 %, kingdoms 1–12)
-- [ ] Heightmap from fractal noise (fBm) multiplied by continent masks; moisture map
-- [ ] Render the heightmap to a PNG background (water depth, shoreline, elevation shading) and register it as a map asset with a thumbnail
+- [ ] Seeded RNG wrapper and generator params model (`GeneratorParams`, validated: size within map limits, land 10–90 %, kingdoms 1–12, `LandShape` and `Climate` enums, temperature and rainfall offsets −1.0…1.0)
+- [ ] Heightmap from fractal noise (fBm) multiplied by the continent masks of the chosen land shape; moisture map
+- [ ] Temperature map: climate base value, colder towards the top and bottom edges (latitude) and with altitude (lapse rate), plus the temperature slider
+- [ ] Render the heightmap to a PNG background (water depth, shoreline, elevation shading, sea ice where water is below freezing) using the climate's colour palette and register it as a map asset with a thumbnail
 - [ ] Coastline traced with marching squares, simplified, and saved as `area` objects on a "Terrain" layer
 - [ ] Rivers: from high cells along the steepest descent to the sea, saved as smoothed `path` objects
-- [ ] Biomes from height and moisture; scatter `mountain`, `hills`, `forest`, `pine-forest` and `swamp` stamps with Poisson-disk sampling on a "Features" layer
+- [ ] Biomes from height, moisture **and temperature** (e.g. ice sheet, tundra, taiga, snow-capped peaks, temperate forest, grassland, desert, jungle, swamp, ash plain); scatter matching stamps with Poisson-disk sampling on a "Features" layer
+- [ ] New stamps in `src/features/maps/stamp-library.ts` (with the key list shared with Rust): cold (`snowy-mountain`, `glacier`, `ice-floe`, `tundra`), arid (`dunes`, `oasis`, `cactus`, `mesa`), tropical (`jungle`, `palm`) and volcanic (`lava-field`); each drawn in the existing 100×100 SVG-path format and shown in the stamp palette
 - [ ] `preview_generation` command (low-res PNG as base64) and the wizard with seed, size, land % and "Reroll"
-- [ ] **Tests:** same seed gives an identical plan; different seeds differ; every op batch is within `MAX_OPS` and every shape within `MAX_POINTS`; rivers end at sea level; only known stamp keys are used; the generated map opens through `get_map`
-- **Acceptance:** generate a 4000×3000 map from seed 42 twice and get the same result; the map has land, sea, rivers and biome stamps, and stays smooth to pan and zoom on Windows and Linux
+- [ ] **Tests:** same seed gives an identical plan; different seeds differ; every op batch is within `MAX_OPS` and every shape within `MAX_POINTS`; rivers end at sea level; only known stamp keys are used; each land shape gives its expected number of land masses (e.g. archipelago ≥ 8 islands, continent 1 dominant mass); the frozen preset is mostly cold biomes and the arid preset mostly dry ones; climate changes biomes but not the coastline for the same seed; the generated map opens through `get_map`
+- **Acceptance:** generate a 4000×3000 map from seed 42 twice and get the same result; regenerate seed 42 as "Archipelago" and as "Frozen" and see clearly different worlds (islands; snow, ice and pine forests); the map has land, sea, rivers and biome stamps, and stays smooth to pan and zoom on Windows and Linux
 
 #### 14b — Places
 
-- [ ] Settlement scoring (coast, river, flat land, distance from others) and placement of capitals, towns and villages
+- [ ] Settlement scoring (coast, river, flat land, climate: fewer and smaller settlements on ice and in deep desert, ports only on unfrozen coasts, distance from others) and placement of capitals, towns and villages
 - [ ] Each settlement becomes a `location` entity (kind city/town/village, region), a pin linked to it, and a matching stamp
 - [ ] Roads between settlements: A* over a terrain cost grid, saved as dashed `path` objects on a "Roads" layer
 - [ ] Name generator: syllable grammar / Markov model per culture, seeded, avoiding duplicates within a world
