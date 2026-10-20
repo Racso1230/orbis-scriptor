@@ -356,9 +356,9 @@ CREATE INDEX idx_events_start ON events(start_day);
 
 **Not done (optional items):** portraits on map pins (pins are drawn in a separate Konva root; the type glyph stays) and task lists / highlight in the lore editor (the importer downgrades them to text).
 
-### Phase 14 — Procedural world generation (BONUS, in progress: 14a done)
+### Phase 14 — Procedural world generation (BONUS, in progress: 14a and 14b done)
 
-> **Bonus phase.** This goes beyond the original roadmap (Phases 0–13 are complete). It is optional. 14a was approved and built; 14b/14c follow the same review-stop rule. When it is approved, do it as three sub-phases (14a, 14b, 14c), each with its own review stop.
+> **Bonus phase.** This goes beyond the original roadmap (Phases 0–13 are complete). It is optional. 14a and 14b were approved and built; 14c (politics and history) waits for its own go-ahead. When it is approved, do it as three sub-phases (14a, 14b, 14c), each with its own review stop.
 
 **Goal:** generate a believable starting world from a seed and a few settings: a terrain map, places, kingdoms and (optionally) people and history. Everything generated is ordinary, editable Orbis data.
 
@@ -416,13 +416,13 @@ CREATE INDEX idx_events_start ON events(start_day);
 - [x] **Tests:** same seed gives an identical plan; different seeds differ; every op batch is within `MAX_OPS` and every shape within `MAX_POINTS`; rivers end at sea level; only known stamp keys are used; each land shape gives its expected number of land masses (e.g. archipelago ≥ 8 islands, continent 1 dominant mass); the frozen preset is mostly cold biomes and the arid preset mostly dry ones; climate changes biomes but not the coastline for the same seed; the generated map opens through `get_map`
 - **Acceptance:** generate a 4000×3000 map from seed 42 twice and get the same result; regenerate seed 42 as "Archipelago" and as "Frozen" and see clearly different worlds (islands; snow, ice and pine forests); the map has land, sea, rivers and biome stamps, and stays smooth to pan and zoom on Windows and Linux
 
-#### 14b — Places
+#### 14b — Places (done)
 
-- [ ] Settlement scoring (coast, river, flat land, climate: fewer and smaller settlements on ice and in deep desert, ports only on unfrozen coasts, distance from others) and placement of capitals, towns and villages
-- [ ] Each settlement becomes a `location` entity (kind city/town/village, region), a pin linked to it, and a matching stamp
-- [ ] Roads between settlements: A* over a terrain cost grid, saved as dashed `path` objects on a "Roads" layer
-- [ ] Name generator: syllable grammar / Markov model per culture, seeded, avoiding duplicates within a world
-- [ ] **Tests:** settlements are on land and spaced out; every pin links to its entity; roads connect their endpoints and avoid water; names are unique and stable per seed
+- [x] Settlement scoring (coast, river, flat land, climate: fewer and smaller settlements on ice and in deep desert, ports only on unfrozen coasts, distance from others) and placement of capitals, towns and villages
+- [x] Each settlement becomes a `location` entity (kind city/town/village, region), a pin linked to it, and a matching stamp
+- [x] Roads between settlements: A* over a terrain cost grid, saved as dashed `path` objects on a "Roads" layer
+- [x] Name generator: syllable grammar / Markov model per culture, seeded, avoiding duplicates within a world
+- [x] **Tests:** settlements are on land and spaced out; every pin links to its entity; roads connect their endpoints and avoid water; names are unique and stable per seed
 - **Acceptance:** generate "map + places"; the sidebar lists the generated locations, double-clicking a pin opens its entity, and search finds settlements by name
 
 #### 14c — Politics and history
