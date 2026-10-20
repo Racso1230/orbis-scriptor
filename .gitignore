@@ -6,6 +6,7 @@ dist
 
 # Rust / Tauri (see also src-tauri/.gitignore)
 src-tauri/target
+src-tauri/target-cli
 src-tauri/gen/schemas
 # rust-analyzer may create a target dir at the repo root
 /target
