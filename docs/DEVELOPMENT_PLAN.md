@@ -356,9 +356,9 @@ CREATE INDEX idx_events_start ON events(start_day);
 
 **Not done (optional items):** portraits on map pins (pins are drawn in a separate Konva root; the type glyph stays) and task lists / highlight in the lore editor (the importer downgrades them to text).
 
-### Phase 14 — Procedural world generation (BONUS, in progress: 14a and 14b done)
+### Phase 14 — Procedural world generation (BONUS, done)
 
-> **Bonus phase.** This goes beyond the original roadmap (Phases 0–13 are complete). It is optional. 14a and 14b were approved and built; 14c (politics and history) waits for its own go-ahead. When it is approved, do it as three sub-phases (14a, 14b, 14c), each with its own review stop.
+> **Bonus phase.** This goes beyond the original roadmap (Phases 0–13 are complete). It is optional. All three sub-phases (14a terrain, 14b places, 14c politics and history) are built and verified live. Extras added along the way: "Generate terrain…" on an empty map writes into that map; a branded welcome screen. When it is approved, do it as three sub-phases (14a, 14b, 14c), each with its own review stop.
 
 **Goal:** generate a believable starting world from a seed and a few settings: a terrain map, places, kingdoms and (optionally) people and history. Everything generated is ordinary, editable Orbis data.
 
@@ -425,13 +425,13 @@ CREATE INDEX idx_events_start ON events(start_day);
 - [x] **Tests:** settlements are on land and spaced out; every pin links to its entity; roads connect their endpoints and avoid water; names are unique and stable per seed
 - **Acceptance:** generate "map + places"; the sidebar lists the generated locations, double-clicking a pin opens its entity, and search finds settlements by name
 
-#### 14c — Politics and history
+#### 14c — Politics and history (done)
 
-- [ ] Kingdoms grown from capitals with a weighted flood fill; each becomes an `area` (fill pattern, colour), a `faction` entity, and `rules` / `located_in` relationships
-- [ ] Rulers and dynasties: `character` entities with `leader_of`, `member_of` and `parent_of` links (shows in the graph and family tree)
-- [ ] History: timeline events (founding of settlements, wars between neighbouring kingdoms, coronations) in day numbers of the display calendar, with `involved_in` participants
-- [ ] Lore stubs: short template documents with mentions, so backlinks, search and the graph work straight away
-- [ ] **Tests:** every kingdom is contiguous and has a capital; relationships respect the kind catalogue's source/target types; event dates are in order; mention links are created for the stubs; generation is atomic (a failure leaves the world unchanged)
+- [x] Kingdoms grown from capitals with a weighted flood fill; each becomes an `area` (fill pattern, colour), a `faction` entity, and `rules` / `located_in` relationships
+- [x] Rulers and dynasties: `character` entities with `leader_of`, `member_of` and `parent_of` links (shows in the graph and family tree)
+- [x] History: timeline events (founding of settlements, wars between neighbouring kingdoms, coronations) in day numbers of the display calendar, with `involved_in` participants
+- [x] Lore stubs: short template documents with mentions, so backlinks, search and the graph work straight away
+- [x] **Tests:** every kingdom is contiguous and has a capital; relationships respect the kind catalogue's source/target types; event dates are in order; mention links are created for the stubs; generation is atomic (a failure leaves the world unchanged)
 - **Acceptance:** generate a full world; open a kingdom and see its ruler, capital, lore with links and a timeline of its wars; the relationship graph and family tree show the dynasty
 
 ### Later
