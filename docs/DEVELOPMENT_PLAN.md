@@ -356,9 +356,63 @@ CREATE INDEX idx_events_start ON events(start_day);
 
 **Not done (optional items):** portraits on map pins (pins are drawn in a separate Konva root; the type glyph stays) and task lists / highlight in the lore editor (the importer downgrades them to text).
 
+### Phase 14 — Procedural world generation (BONUS, not started)
+
+> **Bonus phase.** This goes beyond the original roadmap (Phases 0–13 are complete). It is optional and **has not been started**. Do not begin it without an explicit go-ahead. When it is approved, do it as three sub-phases (14a, 14b, 14c), each with its own review stop.
+
+**Goal:** generate a believable starting world from a seed and a few settings: a terrain map, places, kingdoms and (optionally) people and history. Everything generated is ordinary, editable Orbis data.
+
+**Approach**
+
+- A pure Rust generator in `src-tauri/src/services/generator/`. It takes `(seed, params)` and returns an in-memory `GeneratedWorld` plan. It touches no database or files, and the same seed and params always give the same plan, so it is fully unit-testable.
+- A writer saves the plan through the existing services (`entities::create_blank_map`, `maps::apply_ops`, `entities::create`, `relationships::create`, `events`, `documents::save`) in one transaction. Never write raw SQL around them.
+- It runs on a background thread with typed progress events, following the vault import pattern (`commands/import.rs`: job id, a guard so only one job runs, `GenerateProgress` / `GenerateFinished`).
+- New dependencies: `rand` + `rand_chacha` (a seeded, reproducible random generator) and `noise` (or `fastnoise-lite`). The `image` crate is already present for writing PNGs.
+- The seed, params and generator version are stored in `world_settings` so a world can be regenerated or reproduced.
+- Everything generated is tagged `generated`, so it is easy to find or bulk-delete.
+
+**Constraints to respect**
+
+- `apply_ops` allows at most 5,000 ops per batch, a path or area at most 20,000 points, and an object's style at most 4 KB. Simplify outlines (Douglas–Peucker) and split work into batches.
+- Put fine terrain detail in the background image, not in vector objects, so Konva stays fast on Linux (WebKitGTK).
+- Stamp keys are defined only in the frontend (`src/features/maps/stamp-library.ts`). Share a key list with Rust (or move the catalogue to Rust) so the generator only uses stamps that exist.
+- Map undo/redo is frontend-only (`map-history.ts`). Generating a whole world does not need undo. Any later in-editor tool, such as "regenerate this region", must return ops to the frontend and run them through `runOps`, so a single Ctrl+Z undoes it.
+
+**UX:** a "Generate world" wizard (welcome page and gear menu): seed (with a dice button), map size, land %, number of kingdoms, and scope (map only / + places / + history). It shows a fast low-resolution preview rendered by Rust with "Reroll", then generates into a new world or as a new map in the open world, with a progress bar and a result summary.
+
+#### 14a — Terrain map
+
+- [ ] Seeded RNG wrapper and generator params model (`GeneratorParams`, validated: size within map limits, land 10–90 %, kingdoms 1–12)
+- [ ] Heightmap from fractal noise (fBm) multiplied by continent masks; moisture map
+- [ ] Render the heightmap to a PNG background (water depth, shoreline, elevation shading) and register it as a map asset with a thumbnail
+- [ ] Coastline traced with marching squares, simplified, and saved as `area` objects on a "Terrain" layer
+- [ ] Rivers: from high cells along the steepest descent to the sea, saved as smoothed `path` objects
+- [ ] Biomes from height and moisture; scatter `mountain`, `hills`, `forest`, `pine-forest` and `swamp` stamps with Poisson-disk sampling on a "Features" layer
+- [ ] `preview_generation` command (low-res PNG as base64) and the wizard with seed, size, land % and "Reroll"
+- [ ] **Tests:** same seed gives an identical plan; different seeds differ; every op batch is within `MAX_OPS` and every shape within `MAX_POINTS`; rivers end at sea level; only known stamp keys are used; the generated map opens through `get_map`
+- **Acceptance:** generate a 4000×3000 map from seed 42 twice and get the same result; the map has land, sea, rivers and biome stamps, and stays smooth to pan and zoom on Windows and Linux
+
+#### 14b — Places
+
+- [ ] Settlement scoring (coast, river, flat land, distance from others) and placement of capitals, towns and villages
+- [ ] Each settlement becomes a `location` entity (kind city/town/village, region), a pin linked to it, and a matching stamp
+- [ ] Roads between settlements: A* over a terrain cost grid, saved as dashed `path` objects on a "Roads" layer
+- [ ] Name generator: syllable grammar / Markov model per culture, seeded, avoiding duplicates within a world
+- [ ] **Tests:** settlements are on land and spaced out; every pin links to its entity; roads connect their endpoints and avoid water; names are unique and stable per seed
+- **Acceptance:** generate "map + places"; the sidebar lists the generated locations, double-clicking a pin opens its entity, and search finds settlements by name
+
+#### 14c — Politics and history
+
+- [ ] Kingdoms grown from capitals with a weighted flood fill; each becomes an `area` (fill pattern, colour), a `faction` entity, and `rules` / `located_in` relationships
+- [ ] Rulers and dynasties: `character` entities with `leader_of`, `member_of` and `parent_of` links (shows in the graph and family tree)
+- [ ] History: timeline events (founding of settlements, wars between neighbouring kingdoms, coronations) in day numbers of the display calendar, with `involved_in` participants
+- [ ] Lore stubs: short template documents with mentions, so backlinks, search and the graph work straight away
+- [ ] **Tests:** every kingdom is contiguous and has a capital; relationships respect the kind catalogue's source/target types; event dates are in order; mention links are created for the stubs; generation is atomic (a failure leaves the world unchanged)
+- **Acceptance:** generate a full world; open a kingdom and see its ruler, capital, lore with links and a timeline of its wars; the relationship graph and family tree show the dynasty
+
 ### Later
 
-- Optional sync/collaboration (Yjs-based), plugin system, procedural map generation
+- Optional sync/collaboration (Yjs-based), plugin system
 
 ---
 
