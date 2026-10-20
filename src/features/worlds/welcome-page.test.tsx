@@ -1,6 +1,7 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithQuery } from "@/test/render";
+import { useGenerateStore } from "@/features/generator/generate-store";
 import { useImportStore } from "@/features/importer/import-store";
 import { WelcomePage } from "./welcome-page";
 
@@ -112,6 +113,22 @@ describe("WelcomePage", () => {
       expect(commands.createWorld).toHaveBeenCalledWith("C:/worlds/Imported", "Imported"),
     );
     await waitFor(() => expect(useImportStore.getState().dialogOpen).toBe(true));
+  });
+
+  it("creates a new world and then opens the generate wizard", async () => {
+    dialogOpen.mockResolvedValue("C:/worlds/Gen");
+    commands.createWorld.mockResolvedValue(ok({ name: "Gen", path: "C:/worlds/Gen" }));
+    useImportStore.setState({ dialogOpen: false });
+    useGenerateStore.setState({ dialogOpen: false });
+    renderWithQuery(<WelcomePage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Generate world…/ }));
+    expect(await screen.findByText("New world for the generated map")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Create and continue" }));
+
+    await waitFor(() => expect(commands.createWorld).toHaveBeenCalledWith("C:/worlds/Gen", "Gen"));
+    await waitFor(() => expect(useGenerateStore.getState().dialogOpen).toBe(true));
+    expect(useImportStore.getState().dialogOpen).toBe(false);
   });
 
   it("does not open the import wizard for a plain new world", async () => {

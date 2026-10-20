@@ -105,6 +105,39 @@ pub fn copy_into_assets(source: &Path, assets_dir: &Path) -> AppResult<Asset> {
     ))
 }
 
+/// Saves PNG bytes made by the app (for example a generated map
+/// background) as `<assets_dir>/<id>.png` and returns the new `Asset` (not
+/// yet in the database). `file_name` is the name shown to the user.
+pub fn save_png_bytes(assets_dir: &Path, bytes: &[u8], file_name: &str) -> AppResult<Asset> {
+    let not_a_png = || AppError::Validation("The image data is not a PNG".into());
+    // `Cursor` wraps the byte slice so the image reader can treat it like a
+    // file. Only the header is read to get the size.
+    let reader = ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|_| not_a_png())?;
+    if reader.format() != Some(ImageFormat::Png) {
+        return Err(not_a_png());
+    }
+    let (width, height) = reader.into_dimensions().map_err(|_| not_a_png())?;
+
+    let id = Uuid::now_v7().to_string();
+    fs::create_dir_all(assets_dir)?;
+    fs::write(assets_dir.join(format!("{id}.png")), bytes)?;
+    Ok(with_paths(
+        Asset {
+            id,
+            file_name: file_name.to_owned(),
+            mime: ImageFormat::Png.to_mime_type().to_owned(),
+            width: Some(width),
+            height: Some(height),
+            created_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            path: String::new(),
+            thumb_path: None,
+        },
+        assets_dir,
+    ))
+}
+
 /// Deletes the image file, the thumbnail and any half-written thumbnail of
 /// an asset. Files that are already gone are fine; other failures are only
 /// logged (the database row is what matters, a leftover file is harmless).
@@ -195,6 +228,23 @@ mod tests {
         assert!(Path::new(&asset.path).is_file());
         assert!(asset.path.ends_with(&format!("{}.png", asset.id)));
         assert!(asset.thumb_path.is_none());
+    }
+
+    #[test]
+    fn saves_png_bytes_with_their_size() {
+        let tmp = tempfile::tempdir().unwrap();
+        let assets = tmp.path().join("assets");
+        let src = tiny_png(tmp.path(), 12, 7);
+        let bytes = fs::read(&src).unwrap();
+
+        let asset = save_png_bytes(&assets, &bytes, "map.png").unwrap();
+        assert_eq!((asset.width, asset.height), (Some(12), Some(7)));
+        assert_eq!(asset.mime, "image/png");
+        assert_eq!(asset.file_name, "map.png");
+        assert_eq!(fs::read(&asset.path).unwrap(), bytes);
+
+        let err = save_png_bytes(&assets, b"not a png", "x.png").unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)));
     }
 
     #[test]

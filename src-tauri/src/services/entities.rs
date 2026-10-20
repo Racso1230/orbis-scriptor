@@ -71,6 +71,24 @@ pub fn create_blank_map(
     create_with_dates(conn, input, 0, None, Some((width, height, background)))
 }
 
+/// Like [`create_blank_map`] but WITHOUT its own transaction: the caller
+/// must already be inside one (the map generator writes the entity, the map
+/// and thousands of objects in a single transaction).
+pub fn create_blank_map_in(
+    conn: &Connection,
+    name: &str,
+    width: u32,
+    height: u32,
+    background: &MapBackground,
+) -> AppResult<Entity> {
+    maps::validate_blank(width, height, background)?;
+    let input = NewEntity {
+        entity_type: "map".into(),
+        name: name.into(),
+    };
+    insert_with_dates(conn, input, 0, None, Some((width, height, background)))
+}
+
 /// Creates an `event` entity with the given dates in one transaction.
 pub fn create_event(
     conn: &Connection,
@@ -94,6 +112,22 @@ fn create_with_dates(
     end_day: Option<i64>,
     blank_map: Option<(u32, u32, &MapBackground)>,
 ) -> AppResult<Entity> {
+    // Row and search-index entry are written together or not at all.
+    // `unchecked_transaction` works on a shared `&Connection`.
+    let tx = conn.unchecked_transaction()?;
+    let entity = insert_with_dates(&tx, input, start_day, end_day, blank_map)?;
+    tx.commit()?;
+    Ok(entity)
+}
+
+/// The body of [`create_with_dates`], without a transaction of its own.
+fn insert_with_dates(
+    conn: &Connection,
+    input: NewEntity,
+    start_day: i64,
+    end_day: Option<i64>,
+    blank_map: Option<(u32, u32, &MapBackground)>,
+) -> AppResult<Entity> {
     validate_type(conn, &input.entity_type)?;
     let name = validate_name(&input.name)?;
     let timestamp = now();
@@ -110,25 +144,21 @@ fn create_with_dates(
         tags: Vec::new(),
         portrait: None,
     };
-    // Row and search-index entry are written together or not at all.
-    // `unchecked_transaction` works on a shared `&Connection`.
-    let tx = conn.unchecked_transaction()?;
-    db::entities::insert(&tx, &entity)?;
+    db::entities::insert(conn, &entity)?;
     // A `map` entity also needs its `maps` row and default layer.
     if entity.entity_type == "map" {
         match blank_map {
             Some((width, height, background)) => {
-                maps::create_blank_for_entity(&tx, &entity.id, width, height, background)?;
+                maps::create_blank_for_entity(conn, &entity.id, width, height, background)?;
             }
-            None => maps::create_for_entity(&tx, &entity.id)?,
+            None => maps::create_for_entity(conn, &entity.id)?,
         }
     }
     // An `event` entity needs its `events` row (default calendar).
     if entity.entity_type == "event" {
-        events::create_for_entity(&tx, &entity.id, start_day, end_day)?;
+        events::create_for_entity(conn, &entity.id, start_day, end_day)?;
     }
-    search::reindex_entity(&tx, &entity.id)?;
-    tx.commit()?;
+    search::reindex_entity(conn, &entity.id)?;
     Ok(entity)
 }
 

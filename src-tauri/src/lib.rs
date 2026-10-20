@@ -87,6 +87,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::export::export_markdown,
             commands::import::preview_import,
             commands::import::import_vault,
+            commands::generate::preview_generation,
+            commands::generate::generate_map,
             commands::calendars::get_default_calendar,
             commands::calendars::list_calendars,
             commands::calendars::format_day,
@@ -127,6 +129,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             models::export::ExportFinished,
             models::import::ImportProgress,
             models::import::ImportFinished,
+            models::generate::GenerateProgress,
+            models::generate::GenerateFinished,
         ])
 }
 

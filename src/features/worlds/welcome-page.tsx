@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { FileUp, FolderOpen, FolderPlus, Settings, Sparkles, Trash2 } from "lucide-react";
+import { FileUp, FolderOpen, FolderPlus, Mountain, Settings, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { useAppInfo } from "@/features/app/queries";
+import { useGenerateStore } from "@/features/generator/generate-store";
 import { useImportStore } from "@/features/importer/import-store";
 import { folderName, pickFolder } from "./pick-folder";
 import {
@@ -28,6 +29,14 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** What to open after "New world" has created and opened the world. */
+type NextStep = "import" | "generate" | null;
+
+const NEW_WORLD_TITLES: Record<"import" | "generate", string> = {
+  import: "New world for the import",
+  generate: "New world for the generated map",
+};
+
 /** Landing screen: create a world, open one, or pick a recent one. */
 export function WelcomePage() {
   const navigate = useNavigate();
@@ -38,17 +47,17 @@ export function WelcomePage() {
   const openWorld = useOpenWorld();
   const removeRecent = useRemoveRecentWorld();
 
-  // Folder + name for the "New world" dialog; null = dialog closed.
-  const [draft, setDraft] = useState<{ path: string; name: string; thenImport: boolean } | null>(
-    null,
-  );
+  // Folder + name for the "New world" dialog; null = dialog closed. `then` is the
+  // wizard to open once the new world is shown.
+  const [draft, setDraft] = useState<{ path: string; name: string; then: NextStep } | null>(null);
   const openImport = useImportStore((s) => s.openDialog);
+  const openGenerate = useGenerateStore((s) => s.openDialog);
   const [error, setError] = useState<string | null>(null);
   const busy = createWorld.isPending || openWorld.isPending || createSample.isPending;
 
-  async function handleNew(thenImport = false) {
+  async function handleNew(then: NextStep = null) {
     const path = await pickFolder("Choose an empty folder for the new world");
-    if (path) setDraft({ path, name: folderName(path), thenImport });
+    if (path) setDraft({ path, name: folderName(path), then });
   }
 
   async function handleCreate() {
@@ -56,11 +65,12 @@ export function WelcomePage() {
     setError(null);
     try {
       await createWorld.mutateAsync({ path: draft.path, name: draft.name });
-      const thenImport = draft.thenImport;
+      const then = draft.then;
       setDraft(null);
       await navigate({ to: "/world" });
-      // The import wizard lives in the world layout, so it opens once the world is shown.
-      if (thenImport) openImport();
+      // The wizards live in the world layout, so they open once the world is shown.
+      if (then === "import") openImport();
+      if (then === "generate") openGenerate();
     } catch (e) {
       setError(messageOf(e));
     }
@@ -98,7 +108,7 @@ export function WelcomePage() {
           <p className="text-muted-foreground">Local-first worldbuilding</p>
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <Button onClick={() => handleNew()} disabled={busy}>
             <FolderPlus /> New world
           </Button>
@@ -108,8 +118,11 @@ export function WelcomePage() {
           <Button variant="outline" onClick={handleSample} disabled={busy}>
             <Sparkles /> Create sample world
           </Button>
-          <Button variant="outline" onClick={() => handleNew(true)} disabled={busy}>
+          <Button variant="outline" onClick={() => handleNew("import")} disabled={busy}>
             <FileUp /> Import vault…
+          </Button>
+          <Button variant="outline" onClick={() => handleNew("generate")} disabled={busy}>
+            <Mountain /> Generate world…
           </Button>
           <Button
             variant="ghost"
@@ -176,9 +189,7 @@ export function WelcomePage() {
       <Dialog open={draft !== null} onOpenChange={(open) => !open && setDraft(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>
-              {draft?.thenImport ? "New world for the import" : "New world"}
-            </DialogTitle>
+            <DialogTitle>{draft?.then ? NEW_WORLD_TITLES[draft.then] : "New world"}</DialogTitle>
             <DialogDescription className="truncate">{draft?.path}</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-2">
@@ -196,7 +207,7 @@ export function WelcomePage() {
               Cancel
             </Button>
             <Button onClick={handleCreate} disabled={busy || !draft?.name.trim()}>
-              {draft?.thenImport ? "Create and continue" : "Create"}
+              {draft?.then ? "Create and continue" : "Create"}
             </Button>
           </DialogFooter>
         </DialogContent>

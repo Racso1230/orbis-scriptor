@@ -4,6 +4,7 @@ import { CalendarDays, Map, MapPin, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useEntities, useEntityTypes } from "@/features/entities/queries";
 import { ExportMarkdownDialog } from "@/features/export/export-dialog";
+import { GenerateWizard } from "@/features/generator/generate-wizard";
 import { ImportWizard } from "@/features/importer/import-wizard";
 import { useSyncTypeLooks } from "@/features/entities/type-look";
 import { useCreateAndOpen } from "@/features/entities/use-create-and-open";
@@ -34,6 +35,7 @@ export function WorldLayout() {
       <ShortcutsHost />
       <ExportMarkdownDialog />
       <ImportWizard />
+      <GenerateWizard />
     </div>
   );
 }

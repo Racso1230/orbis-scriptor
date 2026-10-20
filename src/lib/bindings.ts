@@ -249,6 +249,23 @@ export const commands = {
 	 *  warnings or the error text. Refuses to start while another import runs.
 	 */
 	importVault: (vaultDir: string, options: ImportOptions) => typedError<string, AppError>(__TAURI_INVOKE("import_vault", { vaultDir, options })),
+	/**
+	 *  Renders a quick low-resolution preview and returns it as base64 PNG text
+	 *  (the wizard shows it as a `data:` URL). `max_side` is the longer side in
+	 *  pixels, 64..=2048.
+	 * 
+	 *  `async` + `spawn_blocking`: the work runs on a worker thread so the
+	 *  window stays responsive while the wizard re-renders on every change.
+	 */
+	previewGeneration: (params: GeneratorParams, maxSide: number) => typedError<string, AppError>(__TAURI_INVOKE("preview_generation", { params, maxSide })),
+	/**
+	 *  Starts generating a terrain map into the open world and returns a job id
+	 *  at once. The work runs on a background thread and reports through two
+	 *  events (see `models::generate`): `generate-progress` while it runs and
+	 *  `generate-finished` once, with the new map's entity id and stats, or the
+	 *  error text. The map is written in one transaction: all or nothing.
+	 */
+	generateMap: (params: GeneratorParams, name: string | null) => typedError<string, AppError>(__TAURI_INVOKE("generate_map", { params, name })),
 	/**  The world's default calendar. */
 	getDefaultCalendar: () => typedError<Calendar, AppError>(__TAURI_INVOKE("get_default_calendar")),
 	listCalendars: () => typedError<Calendar[], AppError>(__TAURI_INVOKE("list_calendars")),
@@ -357,6 +374,8 @@ export const commands = {
 export const events = {
 	exportFinished: makeEvent<ExportFinished>("export-finished"),
 	exportProgress: makeEvent<ExportProgress>("export-progress"),
+	generateFinished: makeEvent<GenerateFinished>("generate-finished"),
+	generateProgress: makeEvent<GenerateProgress>("generate-progress"),
 	importFinished: makeEvent<ImportFinished>("import-finished"),
 	importProgress: makeEvent<ImportProgress>("import-progress"),
 };
@@ -429,6 +448,22 @@ export type Backlink = {
 	snippet: string,
 };
 
+/**
+ *  What covers one cell of the terrain grid. Water biomes come first.
+ * 
+ *  `PartialOrd`/`Ord` let a `Biome` be a `BTreeMap` key (a sorted map needs
+ *  to compare its keys); the order is the declaration order below.
+ */
+export type Biome = 
+/**  Sea connected to the map edge. */
+"ocean" | 
+/**  Water enclosed by land (not connected to the map edge). */
+"lake" | 
+/**  Ocean or lake water below freezing. */
+"seaIce" | "iceSheet" | "tundra" | 
+/**  Cold coniferous forest. */
+"taiga" | "snowyPeaks" | "mountain" | "hills" | "temperateForest" | "grassland" | "desert" | "savanna" | "jungle" | "swamp" | "ashPlain" | "lava";
+
 /**  A calendar row. */
 export type Calendar = {
 	id: string,
@@ -481,6 +516,9 @@ export type CalendarPreview = {
 	/**  One formatted string per requested day (empty when there are issues). */
 	labels: string[],
 };
+
+/**  A climate preset: base temperature, base moisture and colour palette. */
+export type Climate = "temperate" | "frozen" | "arid" | "tropical" | "volcanic";
 
 /**  How [`format`](crate::services::calendar::format) writes a date. */
 export type DateStyle = 
@@ -749,6 +787,77 @@ export type FolderTypeMapping = {
 	createCustom: NewTypeSpec | null,
 };
 
+/**  Sent once as the event `generate-finished`, after success or failure. */
+export type GenerateFinished = {
+	jobId: string,
+	ok: boolean,
+	/**
+	 *  The new map entity (open it in a tab). `None` on failure: a failed
+	 *  generation changes nothing.
+	 */
+	mapEntityId: string | null,
+	stats: GenerationStats | null,
+	/**  What went wrong, in plain words, when `ok` is false. */
+	error: string | null,
+};
+
+/**  Which stage a generation job is in. */
+export type GeneratePhase = 
+/**  Building the terrain plan in memory (heights, rivers, coast, stamps). */
+"generating" | 
+/**  Saving the background image into the world's `assets/` folder. */
+"rendering" | 
+/**  Writing the map, its layers and objects to the database. */
+"writing";
+
+/**  Progress of a running generation. Sent as the event `generate-progress`. */
+export type GenerateProgress = {
+	/**  The id returned by `generate_map`. */
+	jobId: string,
+	phase: GeneratePhase,
+	/**  Steps done and total steps within the current phase. */
+	done: number,
+	total: number,
+};
+
+/**  How much of a world to generate. Only `MapOnly` is used in Phase 14a. */
+export type GenerationScope = "mapOnly" | "places" | "history";
+
+/**  A summary of what was generated, reported to the frontend when done. */
+export type GenerationStats = {
+	/**  Measured land share in percent (0..100). */
+	landPercentActual: number,
+	/**  Islands and continents big enough to be traced as vector areas. */
+	landMasses: number,
+	rivers: number,
+	stamps: number,
+	/**  Number of grid cells per biome (water biomes included). */
+	biomeCounts: Partial<{ [key in Biome]: number }>,
+};
+
+/**  Everything the generator needs. The same params always give the same map. */
+export type GeneratorParams = {
+	/**
+	 *  Any 32-bit number. (specta refuses 64-bit integers because JavaScript
+	 *  numbers cannot hold them exactly, so the seed is a `u32`.)
+	 */
+	seed: number,
+	/**  Map size in pixels, `256..=16384` per side. */
+	width: number,
+	height: number,
+	landShape: LandShape,
+	climate: Climate,
+	/**  Share of the map that is land, `10..=90` (%). */
+	landPercent: number,
+	/**  Warmer (+) or colder (−) than the preset, `-1.0..=1.0`. */
+	temperature: number,
+	/**  Wetter (+) or drier (−) than the preset, `-1.0..=1.0`. */
+	rainfall: number,
+	/**  Number of kingdoms, `1..=12` (used from Phase 14c). */
+	kingdoms: number,
+	scope: GenerationScope,
+};
+
 export type GraphEdge = {
 	/**  The `links` row id. */
 	id: string,
@@ -868,6 +977,19 @@ export type ImportProgress = {
  *  `number`. `serde(transparent)` makes it travel as a bare number in JSON.
  */
 export type JsInt = number;
+
+/**  The overall arrangement of land and sea. */
+export type LandShape = 
+/**  One large land mass with a ragged coast and a few offshore islands. */
+"continent" | 
+/**  Two or three large land masses separated by sea. */
+"twinContinents" | 
+/**  Many small and medium islands. */
+"archipelago" | 
+/**  One huge land mass with inland seas and lakes. */
+"pangaea" | 
+/**  Land along one or two edges, open sea on the rest. */
+"coastline";
 
 /**  One step of a leap rule, e.g. `{ every: 100, add: false }`. */
 export type LeapCycle = {

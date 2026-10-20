@@ -10,6 +10,7 @@ pub mod entity_types;
 pub mod events;
 pub mod export;
 pub mod gallery;
+pub mod generate;
 pub mod import;
 pub mod links;
 pub mod maps;

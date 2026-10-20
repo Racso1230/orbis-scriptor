@@ -25,6 +25,7 @@ pub mod rivers;
 mod rng;
 pub mod scatter;
 pub mod stamps;
+pub mod writer;
 
 use std::collections::BTreeMap;
 

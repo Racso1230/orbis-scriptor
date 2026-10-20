@@ -7,6 +7,7 @@ import {
   FileDown,
   FileUp,
   FlaskConical,
+  Mountain,
   Network,
   Plus,
   Printer,
@@ -42,6 +43,7 @@ import { useOpenGraph } from "@/features/relationships/use-open-graph";
 import { useOpenTimeline } from "@/features/timeline/use-open-timeline";
 import { useCloseWorld } from "@/features/worlds/queries";
 import { useExportStore } from "@/features/export/export-store";
+import { useGenerateStore } from "@/features/generator/generate-store";
 import { useImportStore } from "@/features/importer/import-store";
 import { HighlightedSnippet } from "./highlighted-snippet";
 import { activeTagToken, applyTagSuggestion, matchTagNames } from "./tag-token";
@@ -72,6 +74,7 @@ export function CommandPalette() {
   const maintenance = useIndexMaintenance();
   const openExport = useExportStore((s) => s.openDialog);
   const openImport = useImportStore((s) => s.openDialog);
+  const openGenerate = useGenerateStore((s) => s.openDialog);
   const tags = useTags();
   const entities = useEntities();
   const favorites = useFavorites();
@@ -182,6 +185,15 @@ export function CommandPalette() {
       run: () => {
         changeOpen(false);
         openImport();
+      },
+    },
+    {
+      id: "generate-map",
+      label: "Generate map…",
+      icon: <Mountain />,
+      run: () => {
+        changeOpen(false);
+        openGenerate();
       },
     },
     {

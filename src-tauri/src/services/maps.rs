@@ -135,6 +135,26 @@ pub fn set_background(
     Ok(fill_paths(updated, assets_dir))
 }
 
+/// Like [`set_background`] but the map keeps the given size instead of the
+/// image's (the map view stretches the image to fit). The map generator uses
+/// it when a very large map gets a smaller background image.
+pub fn set_background_sized(
+    conn: &Connection,
+    assets_dir: &Path,
+    entity_id: &str,
+    asset_id: &str,
+    width: u32,
+    height: u32,
+) -> AppResult<MapInfo> {
+    validate_size(width, height)?;
+    let info = set_background(conn, assets_dir, entity_id, asset_id)?;
+    if (info.width, info.height) == (width, height) {
+        return Ok(info);
+    }
+    db::maps::set_size(conn, &info.id, width, height)?;
+    Ok(fill_paths(map_by_entity(conn, entity_id)?, assets_dir))
+}
+
 // ---- blank maps ---------------------------------------------------------
 
 /// `#RRGGBB` only.
@@ -676,21 +696,44 @@ pub fn apply_ops(
     // If an early `?` returns, the transaction is dropped without commit
     // and SQLite rolls everything back.
     let tx = conn.unchecked_transaction()?;
+    let result = apply_ops_on(&tx, &info, ops)?;
+    tx.commit()?;
+    Ok(result)
+}
+
+/// Like [`apply_ops`] but WITHOUT its own transaction: the caller must
+/// already be inside one and rolls it back if this returns an error (the
+/// map generator writes many batches in a single transaction).
+pub fn apply_ops_in(
+    conn: &Connection,
+    map_entity_id: &str,
+    ops: Vec<MapOp>,
+) -> AppResult<MapOpsResult> {
+    let info = map_by_entity(conn, map_entity_id)?;
+    if ops.len() > MAX_OPS {
+        return Err(AppError::Validation(format!(
+            "At most {MAX_OPS} operations per batch"
+        )));
+    }
+    apply_ops_on(conn, &info, ops)
+}
+
+fn apply_ops_on(tx: &Connection, info: &MapInfo, ops: Vec<MapOp>) -> AppResult<MapOpsResult> {
     let mut touched: Vec<String> = Vec::new();
     let mut deleted_ids: Vec<String> = Vec::new();
     let mut detached_ids: Vec<String> = Vec::new();
     for op in ops {
         match op {
             MapOp::Create { object } => {
-                let created = create_object_in(&tx, Some(&info.id), object)?;
+                let created = create_object_in(tx, Some(&info.id), object)?;
                 touched.push(created.id);
             }
             MapOp::Update { id, patch } => {
-                update_object_in(&tx, Some(&info.id), &id, patch)?;
+                update_object_in(tx, Some(&info.id), &id, patch)?;
                 touched.push(id);
             }
             MapOp::Delete { id } => {
-                detached_ids.extend(delete_object_in(&tx, Some(&info.id), &id)?);
+                detached_ids.extend(delete_object_in(tx, Some(&info.id), &id)?);
                 deleted_ids.push(id);
             }
         }
@@ -700,18 +743,17 @@ pub fn apply_ops(
     let mut objects = Vec::new();
     for id in touched {
         if seen.insert(id.clone())
-            && let Some(object) = db::maps::get_object(&tx, &id)?
+            && let Some(object) = db::maps::get_object(tx, &id)?
         {
             objects.push(object);
         }
     }
     let mut detached = Vec::new();
     for id in detached_ids {
-        if let Some(object) = db::maps::get_object(&tx, &id)? {
+        if let Some(object) = db::maps::get_object(tx, &id)? {
             detached.push(object);
         }
     }
-    tx.commit()?;
     Ok(MapOpsResult {
         objects,
         deleted_ids,

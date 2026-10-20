@@ -5,6 +5,7 @@ import {
   FlaskConical,
   FileDown,
   FileUp,
+  Mountain,
   Printer,
   Settings,
   Shapes,
@@ -20,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useExportStore } from "@/features/export/export-store";
+import { useGenerateStore } from "@/features/generator/generate-store";
 import { useImportStore } from "@/features/importer/import-store";
 import {
   SEED_COUNT,
@@ -33,6 +35,7 @@ export function DebugMenu() {
   const navigate = useNavigate();
   const openExport = useExportStore((s) => s.openDialog);
   const openImport = useImportStore((s) => s.openDialog);
+  const openGenerate = useGenerateStore((s) => s.openDialog);
   const { rebuildIndex, seedEntities, seedEvents, seedRelationships, status, busy } =
     useIndexMaintenance();
 
@@ -69,6 +72,9 @@ export function DebugMenu() {
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={openImport}>
             <FileUp /> Import Markdown / Obsidian vault…
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={openGenerate}>
+            <Mountain /> Generate map…
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={openExport}>
             <FileDown /> Export to Markdown…

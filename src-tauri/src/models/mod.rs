@@ -12,6 +12,7 @@ pub mod entity_type;
 pub mod event;
 pub mod export;
 pub mod gallery;
+pub mod generate;
 pub mod generator;
 pub mod import;
 pub mod link;
