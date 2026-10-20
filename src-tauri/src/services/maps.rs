@@ -42,8 +42,8 @@ const MAX_LAYER_NAME_CHARS: usize = 60;
 pub const MAX_POINTS: usize = 20_000;
 const MAX_LABEL_CHARS: usize = 200;
 const MAX_ICON_CHARS: usize = 64;
-const MAX_STYLE_BYTES: usize = 4096;
-const MAX_OPS: usize = 5000;
+pub const MAX_STYLE_BYTES: usize = 4096;
+pub const MAX_OPS: usize = 5000;
 
 pub(crate) fn now() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)

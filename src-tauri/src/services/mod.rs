@@ -14,6 +14,7 @@ pub mod events;
 pub mod export;
 pub mod front_matter;
 pub mod gallery;
+pub mod generator;
 pub mod graph;
 pub mod links;
 pub mod maps;
