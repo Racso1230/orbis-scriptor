@@ -2,6 +2,8 @@
 
 A local-first desktop app for fantasy worldbuilding: maps, lore, timelines, characters and notes. Everything lives in a folder you choose on your own machine; there is no server and no account.
 
+**Website and downloads: [orbisscriptor.co.uk](https://orbisscriptor.co.uk)** · [Latest release](https://github.com/Racso1230/orbis-scriptor/releases/latest) · [Changelog](CHANGELOG.md)
+
 Built with [Tauri 2](https://tauri.app) (Rust backend) and React + TypeScript (frontend). Targets Windows and Linux.
 
 The roadmap is in [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).

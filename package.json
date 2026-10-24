@@ -3,6 +3,11 @@
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
   "version": "0.5.0",
+  "homepage": "https://orbisscriptor.co.uk",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Racso1230/orbis-scriptor.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -2,6 +2,8 @@
 name = "orbis-scriptor"
 version = "0.5.0"
 description = "Local-first desktop app for fantasy worldbuilding"
+homepage = "https://orbisscriptor.co.uk"
+repository = "https://github.com/Racso1230/orbis-scriptor"
 license-file = "../LICENSE"
 authors = ["Oscar Freeman"]
 edition = "2024"
