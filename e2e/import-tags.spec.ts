@@ -56,7 +56,8 @@ test("import a vault, then use tags, favourites, gallery and portraits", async (
   await page.getByRole("menuitem", { name: "Import Markdown / Obsidian vault…" }).click();
   const wizard = page.getByRole("dialog", { name: "Import Markdown vault" });
   await wizard.getByRole("button", { name: /Choose vault folder/ }).click();
-  await expect(wizard.getByText(/vault$/)).toBeVisible();
+  // The chosen folder path ends in "/vault" (not the dialog title, which also ends in "vault").
+  await expect(wizard.getByText(/[\\/]vault$/)).toBeVisible();
   await wizard.getByRole("button", { name: "Next" }).click();
   await wizard.getByRole("button", { name: "Next" }).click();
   await expect(wizard.getByRole("status")).toContainText("2 notes will be imported");

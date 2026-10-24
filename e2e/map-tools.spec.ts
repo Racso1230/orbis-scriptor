@@ -149,7 +149,7 @@ test("draw, drag, label, stamp, undo and export on a blank map", async () => {
   // 5. Stamps: pick Castle in the palette and place two.
   await page.getByRole("button", { name: /^Stamp/ }).click();
   const palette = page.getByRole("group", { name: "Stamps" });
-  await expect(palette.getByRole("button", { name: "Mountain" })).toBeVisible();
+  await expect(palette.getByRole("button", { name: "Mountain", exact: true })).toBeVisible();
   await palette.getByRole("button", { name: "Castle" }).click();
   const castle = at(box, 0.3, 0.55);
   await page.mouse.click(castle.x, castle.y);
